@@ -12,7 +12,9 @@ use FancyFlow\Laravel\Console\DiscoverCommand;
 use FancyFlow\Laravel\Console\ListKindsCommand;
 use FancyFlow\Laravel\Console\RunFlowCommand;
 use FancyFlow\Laravel\Console\ValidateFlowCommand;
+use FancyFlow\Laravel\Http\FlowRoutes;
 use FancyFlow\NodeKindRegistry;
+use FancyFlow\Nodes\Ai\AgentExecutor;
 use FancyFlow\Nodes\Support\EchoLlmClient;
 use FancyFlow\Nodes\Support\EchoToolInvoker;
 use FancyFlow\Nodes\Support\EmptyVectorStore;
@@ -56,6 +58,9 @@ final class FancyFlowServiceProvider extends ServiceProvider
         $this->app->singleton(NodeKindRegistry::class, function (Container $app): NodeKindRegistry {
             $config = (array) $app['config']['fancy-flow'];
             $registry = Builtin::register(new NodeKindRegistry(), withStructural: (bool) ($config['structural_kinds'] ?? true));
+            if ((bool) ($config['agentic'] ?? true)) {
+                $registry->register(NodeKind::fromArray(Builtin::agentKind()));
+            }
             foreach ((array) ($config['kinds'] ?? []) as $kind) {
                 $registry->register($kind instanceof NodeKind ? $kind : NodeKind::fromArray($kind));
             }
@@ -65,7 +70,11 @@ final class FancyFlowServiceProvider extends ServiceProvider
 
         $this->app->singleton(ExecutorRegistry::class, function (Container $app): ExecutorRegistry {
             $config = (array) $app['config']['fancy-flow'];
-            $registry = Builtin::executors($this->buildDeps($app, $config), new ContainerResolver($app));
+            $deps = $this->buildDeps($app, $config);
+            $registry = Builtin::executors($deps, new ContainerResolver($app));
+            if ((bool) ($config['agentic'] ?? true)) {
+                $registry->bind('agent', new AgentExecutor($deps->llm, $deps->tools));
+            }
             foreach ((array) ($config['executors'] ?? []) as $kind => $executor) {
                 $registry->bind((string) $kind, $executor);
             }
@@ -84,14 +93,27 @@ final class FancyFlowServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $migrations = dirname(__DIR__, 2).'/database/migrations';
+
+        // Only create the tables when persistence is on; publishing is always
+        // available so apps can vendor + tweak the migrations.
+        if ((bool) ($this->app['config']['fancy-flow']['persistence']['enabled'] ?? false)) {
+            $this->loadMigrationsFrom($migrations);
+        }
+
         if ($this->app->runningInConsole()) {
             $this->publishes([self::CONFIG => $this->app->configPath('fancy-flow.php')], 'fancy-flow-config');
+            $this->publishes([$migrations => $this->app->databasePath('migrations')], 'fancy-flow-migrations');
             $this->commands([
                 RunFlowCommand::class,
                 ListKindsCommand::class,
                 ValidateFlowCommand::class,
                 DiscoverCommand::class,
             ]);
+        }
+
+        if ((bool) ($this->app['config']['fancy-flow']['agentic'] ?? true)) {
+            FlowRoutes::macro();
         }
 
         $this->discoverFlowNodes();

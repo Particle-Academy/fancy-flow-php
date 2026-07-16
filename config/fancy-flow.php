@@ -53,6 +53,10 @@ return [
     // consumer marks them ShouldBroadcast, this feeds <FlowEditor> live status.
     'events' => true,
 
+    // Register the `agent` kind (LLM agent with tools + multi-step reasoning)
+    // and the Route::flow() webhook macro.
+    'agentic' => true,
+
     /*
     |--------------------------------------------------------------------------
     | Queue (durable runs — 0.3)

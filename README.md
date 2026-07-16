@@ -127,6 +127,65 @@ a `callable`, or a class-string of either. Class-strings resolve through a
 constructor DI. Return `Port::branch(...)` / `Port::only(...)` to route; emit
 events with `$ctx->emit(...)`; stop the run with `$ctx->abort(...)`.
 
+## Laravel
+
+Installing under Laravel auto-registers the service provider + `FancyFlow` facade.
+Executors resolve through the container (constructor DI), `api_request` uses
+Laravel's HTTP client, `memory_store` / `data_store` use the cache, and each run's
+events re-emit as Laravel events.
+
+```php
+use FancyFlow\Laravel\Facades\FancyFlow;
+
+$result = FancyFlow::run($schema, ['trigger-1' => ['payload' => $request->all()]]);
+
+// A custom node with full DI (kind + executor in one call):
+FancyFlow::extend('geocode', GeocodeExecutor::class, [
+    'name' => 'geocode', 'category' => 'io', 'label' => 'Geocode',
+]);
+// …or co-locate both with the attribute + `php artisan flow:discover`:
+#[FlowNode('geocode', category: 'io', label: 'Geocode')]
+final class GeocodeExecutor implements NodeExecutor { /* ... */ }
+```
+
+Artisan: `flow:run {file} --input=…`, `flow:list-kinds`, `flow:validate {file}`,
+`flow:discover`. Publish config with `--tag=fancy-flow-config`.
+
+### Durable, queued runs
+
+Enable `persistence` + publish the migrations, and dispatch a run onto a queue.
+It **persists a checkpoint after each node**, so a retry resumes from the last
+completed node rather than restarting:
+
+```php
+$run = FancyFlow::dispatch($schema, ['trigger-1' => ['payload' => $payload]]);
+$run->status;   // pending → running → completed | failed | awaiting_approval
+$run->outputs;  // once completed
+```
+
+A `human_approval` node **pauses** the run (status `awaiting_approval`) instead of
+failing — the trust-but-verify staged write. Resume with a recorded decision:
+
+```php
+$run->approve();   // routes down the `approved` branch and continues
+$run->deny();      // routes down `denied`
+```
+
+Expose a flow as a webhook, and give any model its own flows:
+
+```php
+Route::flow('/hooks/onboard', $schema);          // POST → dispatch a durable run
+class Project extends Model { use HasWorkflows; } // $project->workflows()
+```
+
+### Agentic
+
+The `agent` kind runs an LLM with tools and bounded multi-step reasoning
+(`AgentExecutor`), backed by the `LlmClient` + `ToolInvoker` contracts — bind
+`laravel/ai` (or your own) and register tools. Every step streams via `emit()` and
+the full trace is returned, so an agent run is auditable and (when durable)
+resumable.
+
 ## Parity
 
 `tests/Parity/fixtures/*.json` are shared golden files — a `WorkflowSchema` +
@@ -143,15 +202,15 @@ composer test
 
 ## Roadmap
 
-- **0.1 — core parity** *(this release)* — schema, engine, registries, the 22
-  built-in kinds + default executors, custom nodes, Pest + parity fixtures.
-- **0.2 — Laravel layer** — service provider + facade, container executors +
+- **0.1 — core parity** ✅ — schema, engine, registries, the 22 built-in kinds +
+  default executors, custom nodes, Pest + parity fixtures.
+- **0.2 — Laravel layer** ✅ — service provider + facade, container executors +
   `#[FlowNode]` discovery, `config/fancy-flow.php`, Artisan, RunEvent → Laravel events.
-- **0.3 — durable + agentic** — queued `RunWorkflowJob` (retries + resume),
-  `Workflow`/`WorkflowRun` persistence, `laravel/ai` agent executor, human-in-the-loop
-  approval, trigger registry (schedule / event / webhook).
-- **0.4 — Human+** — broadcast run status over Reverb so `<FlowEditor>` shows a
-  server run live; MCP bridge so an agent can trigger + watch server runs.
+- **0.3 — durable + agentic** ✅ — queued `RunWorkflowJob` (retries + resume),
+  `Workflow`/`WorkflowRun` persistence, `agent` executor, human-in-the-loop
+  approval pause, `Route::flow()` webhook.
+- **0.4 — Human+** *(next)* — broadcast run status over Reverb so `<FlowEditor>`
+  shows a server run live; MCP bridge so an agent can trigger + watch server runs.
 
 ## License
 

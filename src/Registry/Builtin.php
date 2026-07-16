@@ -386,4 +386,27 @@ final class Builtin
             ],
         ];
     }
+
+    /**
+     * The `agent` kind — an LLM agent with tools + bounded multi-step reasoning
+     * (0.3). Not part of the fancy-flow `builtin.ts` mirror, so it is opt-in; the
+     * Laravel layer registers it + binds {@see \FancyFlow\Nodes\Ai\AgentExecutor}.
+     *
+     * @return array<string,mixed>
+     */
+    public static function agentKind(): array
+    {
+        return [
+            'name' => 'agent', 'category' => 'ai', 'label' => 'Agent', 'icon' => '✦',
+            'description' => 'LLM agent with tools + multi-step reasoning.',
+            'configSchema' => [
+                ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'required' => true, 'placeholder' => 'claude-sonnet-4-5'],
+                ['type' => 'textarea', 'key' => 'system', 'label' => 'System prompt', 'rows' => 4],
+                ['type' => 'expression', 'key' => 'prompt', 'label' => 'Task', 'required' => true, 'example' => '{{ $json.task }}'],
+                ['type' => 'json', 'key' => 'tools', 'label' => 'Tools (JSON)', 'description' => 'Tool definitions the agent may call.'],
+                ['type' => 'number', 'key' => 'max_steps', 'label' => 'Max steps', 'default' => 3, 'min' => 1, 'max' => 20],
+                ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1, 'default' => 0.7],
+            ],
+        ];
+    }
 }

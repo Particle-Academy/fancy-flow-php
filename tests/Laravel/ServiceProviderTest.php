@@ -25,7 +25,33 @@ function node(string $id, string $kind, array $config = []): array
 
 it('resolves the manager and facade', function () {
     expect(app('fancy-flow'))->toBeInstanceOf(FancyFlowManager::class);
-    expect(FancyFlow::kinds()->all())->toHaveCount(24); // 22 built-ins + note + subgraph
+    expect(FancyFlow::kinds()->all())->toHaveCount(25); // 22 built-ins + note + subgraph + agent
+    expect(FancyFlow::kinds()->has('agent'))->toBeTrue();
+});
+
+it('runs an agent node through the LLM client', function () {
+    $result = FancyFlow::run(
+        schema(
+            [node('t', 'manual_trigger'), node('a', 'agent', ['model' => 'claude-sonnet-4-5', 'prompt' => '{{ $json.task }}'])],
+            [['id' => 'e1', 'source' => 't', 'target' => 'a']],
+        ),
+        ['t' => ['task' => 'summarize the docs']],
+    );
+
+    expect($result->ok)->toBeTrue();
+    expect($result->output('a')['text'])->toBe('[claude-sonnet-4-5] summarize the docs');
+    expect($result->output('a')['steps'])->toHaveCount(1);
+});
+
+it('exposes a workflow as a webhook via Route::flow', function () {
+    Illuminate\Support\Facades\Route::flow('/hooks/echo', schema(
+        [node('wh', 'webhook_trigger'), node('o', 'output')],
+        [['id' => 'e1', 'source' => 'wh', 'target' => 'o']],
+    ), ['durable' => false]);
+
+    $this->postJson('/hooks/echo', ['hello' => 'world'])
+        ->assertOk()
+        ->assertJson(['ok' => true, 'outputs' => ['o' => ['hello' => 'world']]]);
 });
 
 it('runs a workflow through the container executors', function () {

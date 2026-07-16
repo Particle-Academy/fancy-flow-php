@@ -94,6 +94,8 @@ final class FancyFlowManager
         ?callable $onEvent = null,
         ?RunOptions $options = null,
         ?string $runId = null,
+        ?ExecutorRegistry $executors = null,
+        bool $emitTerminalEvents = true,
     ): RunResult {
         $graph = $this->toGraph($flow);
         $runId ??= self::newRunId();
@@ -103,9 +105,11 @@ final class FancyFlowManager
             initialInputs: $initialInputs,
         );
 
-        $result = (new FlowRunner())->run($graph, $this->executors, $this->bridge($runId, $onEvent), $options);
+        $result = (new FlowRunner())->run($graph, $executors ?? $this->executors, $this->bridge($runId, $onEvent), $options);
 
-        if ($this->eventsEnabled()) {
+        // The durable job owns its terminal events (a pause is not a failure), so
+        // it opts out here and dispatches WorkflowFinished itself on completion.
+        if ($emitTerminalEvents && $this->eventsEnabled()) {
             $this->events->dispatch(
                 $result->ok
                     ? new WorkflowFinished($runId, true, $result->outputs)
@@ -114,6 +118,47 @@ final class FancyFlowManager
         }
 
         return $result;
+    }
+
+    /**
+     * Create a persisted {@see \FancyFlow\Laravel\Models\WorkflowRun} and queue
+     * it via {@see \FancyFlow\Laravel\Jobs\RunWorkflowJob} — a durable, resumable
+     * run. Requires `persistence.enabled` + the migrations.
+     *
+     * @param array<string,array<string,mixed>> $initialInputs
+     */
+    public function dispatch(
+        FlowGraph|ImportResult|string|array $flow,
+        array $initialInputs = [],
+        ?int $workflowId = null,
+    ): \FancyFlow\Laravel\Models\WorkflowRun {
+        $run = new \FancyFlow\Laravel\Models\WorkflowRun();
+        $run->forceFill([
+            'run_key' => self::newRunId(),
+            'workflow_id' => $workflowId,
+            'status' => \FancyFlow\Laravel\Models\WorkflowRun::PENDING,
+            'schema' => $this->toSchemaArray($flow),
+            'initial_inputs' => $initialInputs,
+        ])->save();
+
+        \FancyFlow\Laravel\Jobs\RunWorkflowJob::enqueue($run);
+
+        return $run;
+    }
+
+    /** @return array<string,mixed> */
+    private function toSchemaArray(FlowGraph|ImportResult|string|array $flow): array
+    {
+        if (is_string($flow)) {
+            $decoded = json_decode($flow, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+        if (is_array($flow)) {
+            return $flow;
+        }
+
+        return Workflow::export($flow instanceof ImportResult ? $flow->graph : $flow);
     }
 
     public function toGraph(FlowGraph|ImportResult|string|array $flow): FlowGraph

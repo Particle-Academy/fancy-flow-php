@@ -68,6 +68,20 @@ final class ExecutorRegistry
         return $this;
     }
 
+    /**
+     * A shallow copy sharing the resolver. Bind on the fork to override kinds
+     * for a single run without mutating the shared registry (e.g. the durable
+     * job swapping in a pausing approval executor).
+     */
+    public function fork(): self
+    {
+        $copy = new self($this->resolver);
+        $copy->byKind = $this->byKind;
+        $copy->byNode = $this->byNode;
+
+        return $copy;
+    }
+
     public function hasKind(string $kind): bool
     {
         return isset($this->byKind[$kind]);

@@ -20,7 +20,7 @@ function tempSchema(array $nodes, array $edges = []): string
 it('lists registered kinds', function () {
     $this->artisan('flow:list-kinds')
         ->expectsOutputToContain('manual_trigger')
-        ->expectsOutputToContain('24 kinds registered.')
+        ->expectsOutputToContain('25 kinds registered.')
         ->assertSuccessful();
 });
 

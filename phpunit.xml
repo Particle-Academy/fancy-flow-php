@@ -16,6 +16,9 @@
         <testsuite name="Laravel">
             <directory>tests/Laravel</directory>
         </testsuite>
+        <testsuite name="Durable">
+            <directory>tests/Durable</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
