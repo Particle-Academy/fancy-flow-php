@@ -1,0 +1,63 @@
+{
+    "name": "14-api-request",
+    "description": "HTTP GET with an interpolated URL (echo client).",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "api",
+                    "kind": "api_request",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "method": "GET",
+                        "url": "https://api.example.com/users/{{ $json.id }}"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "api"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "id": 42
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "id": 42
+            },
+            "api": {
+                "status": 200,
+                "headers": [],
+                "body": {
+                    "echoed": {
+                        "method": "GET",
+                        "url": "https://api.example.com/users/42",
+                        "body": null
+                    }
+                }
+            }
+        }
+    }
+}

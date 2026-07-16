@@ -1,0 +1,86 @@
+{
+    "name": "18-human-approval",
+    "description": "Approval routes to the approved branch.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "ap",
+                    "kind": "human_approval",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "title": "Ship it?"
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "ap"
+                },
+                {
+                    "id": "e2",
+                    "source": "ap",
+                    "target": "o",
+                    "sourceHandle": "approved"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "approved": true,
+            "in": {
+                "release": "1.0"
+            }
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "approved": true,
+                "in": {
+                    "release": "1.0"
+                }
+            },
+            "ap": {
+                "branch": "approved",
+                "value": {
+                    "approved": true,
+                    "in": {
+                        "release": "1.0"
+                    }
+                }
+            },
+            "o": {
+                "approved": true,
+                "in": {
+                    "release": "1.0"
+                }
+            }
+        }
+    }
+}

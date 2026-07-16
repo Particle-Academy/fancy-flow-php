@@ -1,0 +1,78 @@
+{
+    "name": "04-switch-case",
+    "description": "Switch routes on a key to case_b.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "sw",
+                    "kind": "switch_case",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "value": "{{ $json.kind }}",
+                        "cases": {
+                            "a": "case_a",
+                            "b": "case_b"
+                        }
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "sw"
+                },
+                {
+                    "id": "e2",
+                    "source": "sw",
+                    "target": "o",
+                    "sourceHandle": "case_b"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "kind": "b"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "kind": "b"
+            },
+            "sw": {
+                "__port": "case_b",
+                "value": {
+                    "kind": "b"
+                }
+            },
+            "o": {
+                "kind": "b"
+            }
+        }
+    }
+}

@@ -1,0 +1,67 @@
+{
+    "name": "07-for-each",
+    "description": "Resolve a list from the payload.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "fe",
+                    "kind": "for_each",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "source": "{{ $json.items }}"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "fe"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "items": [
+                "x",
+                "y",
+                "z"
+            ]
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "items": [
+                    "x",
+                    "y",
+                    "z"
+                ]
+            },
+            "fe": {
+                "items": [
+                    "x",
+                    "y",
+                    "z"
+                ],
+                "count": 3
+            }
+        }
+    }
+}

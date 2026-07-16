@@ -1,0 +1,59 @@
+{
+    "name": "16-schedule-trigger",
+    "description": "A cron-scheduled entry point.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "s",
+                    "kind": "schedule_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    },
+                    "config": {
+                        "cron": "*/5 * * * *",
+                        "timezone": "UTC"
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "s",
+                    "target": "o"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "s": {
+            "tick": 1
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "s": {
+                "cron": "*/5 * * * *",
+                "timezone": "UTC",
+                "tick": 1
+            },
+            "o": {
+                "cron": "*/5 * * * *",
+                "timezone": "UTC",
+                "tick": 1
+            }
+        }
+    }
+}

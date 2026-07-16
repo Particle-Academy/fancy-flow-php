@@ -1,0 +1,58 @@
+{
+    "name": "12-tool-use",
+    "description": "Invoke a named tool with resolved args.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "tu",
+                    "kind": "tool_use",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "tool": "search_index",
+                        "args": "{{ $json }}"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "tu"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "query": "flows"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "query": "flows"
+            },
+            "tu": {
+                "tool": "search_index",
+                "args": {
+                    "query": "flows"
+                }
+            }
+        }
+    }
+}

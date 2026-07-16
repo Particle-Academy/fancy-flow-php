@@ -1,0 +1,54 @@
+{
+    "name": "10-variable-transform",
+    "description": "A variable feeds a transform.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "v",
+                    "kind": "variable",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    },
+                    "config": {
+                        "name": "who",
+                        "value": "{{ $json.who }}"
+                    }
+                },
+                {
+                    "id": "tf",
+                    "kind": "transform",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "expression": "Hello {{ $json }}"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "v",
+                    "target": "tf"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "v": {
+            "who": "world"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "v": "world",
+            "tf": "Hello world"
+        }
+    }
+}

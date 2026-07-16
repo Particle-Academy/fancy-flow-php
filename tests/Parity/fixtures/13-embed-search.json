@@ -1,0 +1,56 @@
+{
+    "name": "13-embed-search",
+    "description": "Embed a query against an empty vector store.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "es",
+                    "kind": "embed_search",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "query": "{{ $json.q }}",
+                        "topK": 3
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "es"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "q": "onboarding"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "q": "onboarding"
+            },
+            "es": {
+                "query": "onboarding",
+                "matches": []
+            }
+        }
+    }
+}

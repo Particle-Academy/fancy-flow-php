@@ -1,0 +1,65 @@
+{
+    "name": "15-webhook-out",
+    "description": "POST a payload to a URL (echo client).",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "wo",
+                    "kind": "webhook_out",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "url": "https://hooks.example.com/x",
+                        "payload": "{{ $json }}"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "wo"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "event": "signup"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "event": "signup"
+            },
+            "wo": {
+                "sent": true,
+                "status": 200,
+                "response": {
+                    "echoed": {
+                        "method": "POST",
+                        "url": "https://hooks.example.com/x",
+                        "body": {
+                            "event": "signup"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

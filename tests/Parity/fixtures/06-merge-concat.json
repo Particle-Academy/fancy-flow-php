@@ -1,0 +1,91 @@
+{
+    "name": "06-merge-concat",
+    "description": "Two lists concatenated.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "a",
+                    "kind": "variable",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    },
+                    "config": {
+                        "name": "a",
+                        "value": "{{ $json.left }}"
+                    }
+                },
+                {
+                    "id": "b",
+                    "kind": "variable",
+                    "position": {
+                        "x": 0,
+                        "y": 1
+                    },
+                    "config": {
+                        "name": "b",
+                        "value": "{{ $json.right }}"
+                    }
+                },
+                {
+                    "id": "m",
+                    "kind": "merge",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "mode": "concat"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "a",
+                    "target": "m",
+                    "targetHandle": "a"
+                },
+                {
+                    "id": "e2",
+                    "source": "b",
+                    "target": "m",
+                    "targetHandle": "b"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "a": {
+            "left": [
+                1,
+                2
+            ]
+        },
+        "b": {
+            "right": [
+                3
+            ]
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "a": [
+                1,
+                2
+            ],
+            "b": [
+                3
+            ],
+            "m": [
+                1,
+                2,
+                3
+            ]
+        }
+    }
+}

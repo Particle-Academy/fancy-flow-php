@@ -1,0 +1,106 @@
+{
+    "name": "02-webhook-branch-true-notify",
+    "description": "Webhook payload branches true and notifies; the merge point is the output.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "wh",
+                    "kind": "webhook_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "br",
+                    "kind": "branch",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "condition": "{{ $json.vip }}"
+                    }
+                },
+                {
+                    "id": "nf",
+                    "kind": "notify",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    },
+                    "config": {
+                        "channel": "slack",
+                        "to": "#vips",
+                        "message": "VIP {{ $json.name }}"
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 3,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "wh",
+                    "target": "br"
+                },
+                {
+                    "id": "e2",
+                    "source": "br",
+                    "target": "nf",
+                    "sourceHandle": "true"
+                },
+                {
+                    "id": "e3",
+                    "source": "nf",
+                    "target": "o"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "wh": {
+            "payload": {
+                "vip": true,
+                "name": "Ada"
+            }
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "wh": {
+                "vip": true,
+                "name": "Ada"
+            },
+            "br": {
+                "branch": "true",
+                "value": {
+                    "vip": true,
+                    "name": "Ada"
+                }
+            },
+            "nf": {
+                "sent": true,
+                "channel": "slack",
+                "to": "#vips",
+                "message": "VIP Ada"
+            },
+            "o": {
+                "sent": true,
+                "channel": "slack",
+                "to": "#vips",
+                "message": "VIP Ada"
+            }
+        }
+    }
+}

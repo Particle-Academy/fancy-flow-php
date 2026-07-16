@@ -1,0 +1,26 @@
+{
+    "name": "22-unknown-kind",
+    "description": "An unregistered kind has no executor and errors at run time.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "x",
+                    "kind": "no_such_kind",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": []
+        }
+    },
+    "initialInputs": {},
+    "expected": {
+        "ok": false,
+        "errorContains": "No executor registered"
+    }
+}

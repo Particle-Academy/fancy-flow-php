@@ -1,0 +1,59 @@
+{
+    "name": "11-llm-call",
+    "description": "Deterministic echo LLM completion.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "llm",
+                    "kind": "llm_call",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "model": "claude-sonnet-4-5",
+                        "prompt": "{{ $json.q }}"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "llm"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "q": "why is the sky blue"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "q": "why is the sky blue"
+            },
+            "llm": {
+                "text": "[claude-sonnet-4-5] why is the sky blue",
+                "usage": {
+                    "input_tokens": 5,
+                    "output_tokens": 5
+                }
+            }
+        }
+    }
+}

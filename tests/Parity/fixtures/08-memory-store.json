@@ -1,0 +1,72 @@
+{
+    "name": "08-memory-store",
+    "description": "Write to memory then read it back.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "w",
+                    "kind": "memory_store",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "operation": "write",
+                        "key": "pref",
+                        "value": "{{ $json.pref }}"
+                    }
+                },
+                {
+                    "id": "r",
+                    "kind": "memory_store",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    },
+                    "config": {
+                        "operation": "read",
+                        "key": "pref"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "w"
+                },
+                {
+                    "id": "e2",
+                    "source": "w",
+                    "target": "r"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "pref": "dark"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "pref": "dark"
+            },
+            "w": "dark",
+            "r": "dark"
+        }
+    }
+}

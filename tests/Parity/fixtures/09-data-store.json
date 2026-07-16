@@ -1,0 +1,83 @@
+{
+    "name": "09-data-store",
+    "description": "Set a row then query the table.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "s",
+                    "kind": "data_store",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "operation": "set",
+                        "table": "users",
+                        "key": "1",
+                        "value": "{{ $json.row }}"
+                    }
+                },
+                {
+                    "id": "q",
+                    "kind": "data_store",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    },
+                    "config": {
+                        "operation": "list",
+                        "table": "users"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "s"
+                },
+                {
+                    "id": "e2",
+                    "source": "s",
+                    "target": "q"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "row": {
+                "name": "A"
+            }
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "row": {
+                    "name": "A"
+                }
+            },
+            "s": {
+                "name": "A"
+            },
+            "q": {
+                "1": {
+                    "name": "A"
+                }
+            }
+        }
+    }
+}

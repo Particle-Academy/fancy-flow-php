@@ -1,0 +1,70 @@
+{
+    "name": "01-manual-transform-output",
+    "description": "Manual trigger seeds a payload; transform extracts a field; output captures it.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "tf",
+                    "kind": "transform",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "expression": "{{ $json.user.name }}"
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "tf"
+                },
+                {
+                    "id": "e2",
+                    "source": "tf",
+                    "target": "o"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "user": {
+                "name": "Ada"
+            }
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "user": {
+                    "name": "Ada"
+                }
+            },
+            "tf": "Ada",
+            "o": "Ada"
+        }
+    }
+}

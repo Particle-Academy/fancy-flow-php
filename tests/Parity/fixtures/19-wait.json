@@ -1,0 +1,59 @@
+{
+    "name": "19-wait",
+    "description": "Wait passes through without sleeping (framework-free).",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "w",
+                    "kind": "wait",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "mode": "duration",
+                        "duration": "10s"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "w"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "job": 7
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "job": 7
+            },
+            "w": {
+                "waited": "duration",
+                "duration": "10s",
+                "input": {
+                    "job": 7
+                }
+            }
+        }
+    }
+}

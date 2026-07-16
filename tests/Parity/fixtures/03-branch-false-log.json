@@ -1,0 +1,99 @@
+{
+    "name": "03-branch-false-log",
+    "description": "A false condition routes to the log branch.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "br",
+                    "kind": "branch",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "condition": "{{ $json.vip }}"
+                    }
+                },
+                {
+                    "id": "lg",
+                    "kind": "log",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    },
+                    "config": {
+                        "level": "info",
+                        "message": "regular {{ $json.name }}"
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 3,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "br"
+                },
+                {
+                    "id": "e2",
+                    "source": "br",
+                    "target": "lg",
+                    "sourceHandle": "false"
+                },
+                {
+                    "id": "e3",
+                    "source": "lg",
+                    "target": "o"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "vip": false,
+            "name": "Bo"
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "vip": false,
+                "name": "Bo"
+            },
+            "br": {
+                "branch": "false",
+                "value": {
+                    "vip": false,
+                    "name": "Bo"
+                }
+            },
+            "lg": {
+                "logged": "regular Bo",
+                "level": "info"
+            },
+            "o": {
+                "logged": "regular Bo",
+                "level": "info"
+            }
+        }
+    }
+}

@@ -1,0 +1,88 @@
+{
+    "name": "20-subgraph",
+    "description": "A subgraph runs a nested transform → output.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "sg",
+                    "kind": "subgraph",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "graph": {
+                            "$schema": "https://particle.academy/schemas/workflow/v1.json",
+                            "version": 1,
+                            "graph": {
+                                "nodes": [
+                                    {
+                                        "id": "itf",
+                                        "kind": "transform",
+                                        "position": {
+                                            "x": 0,
+                                            "y": 0
+                                        },
+                                        "config": {
+                                            "expression": "{{ $json.n }}"
+                                        }
+                                    },
+                                    {
+                                        "id": "io",
+                                        "kind": "output",
+                                        "position": {
+                                            "x": 1,
+                                            "y": 0
+                                        }
+                                    }
+                                ],
+                                "edges": [
+                                    {
+                                        "id": "ie",
+                                        "source": "itf",
+                                        "target": "io"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "sg"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "n": 99
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "n": 99
+            },
+            "sg": {
+                "itf": 99,
+                "io": 99
+            }
+        }
+    }
+}

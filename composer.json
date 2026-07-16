@@ -1,0 +1,56 @@
+{
+    "name": "particle-academy/fancy-flow-php",
+    "description": "PHP runtime for fancy-flow workflow graphs — the framework-free twin of @particle-academy/fancy-flow's engine. Same WorkflowSchema JSON in, same outputs out; author in <FlowEditor>, run on PHP.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "workflow",
+        "flow",
+        "automation",
+        "agentic",
+        "ai",
+        "dag",
+        "orchestration",
+        "fancy-flow",
+        "particle-academy"
+    ],
+    "homepage": "https://github.com/Particle-Academy/fancy-flow-php",
+    "support": {
+        "issues": "https://github.com/Particle-Academy/fancy-flow-php/issues",
+        "source": "https://github.com/Particle-Academy/fancy-flow-php"
+    },
+    "authors": [
+        {
+            "name": "Particle Academy",
+            "homepage": "https://github.com/Particle-Academy"
+        }
+    ],
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {
+        "pestphp/pest": "^2.0|^3.0|^4.0",
+        "phpunit/phpunit": "^10.0|^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "FancyFlow\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FancyFlow\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "test-coverage": "pest --coverage"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}

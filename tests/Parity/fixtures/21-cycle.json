@@ -1,0 +1,51 @@
+{
+    "name": "21-cycle",
+    "description": "A cyclic graph aborts.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "a",
+                    "kind": "transform",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    },
+                    "config": {
+                        "expression": "x"
+                    }
+                },
+                {
+                    "id": "b",
+                    "kind": "transform",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "expression": "y"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "a",
+                    "target": "b"
+                },
+                {
+                    "id": "e2",
+                    "source": "b",
+                    "target": "a"
+                }
+            ]
+        }
+    },
+    "initialInputs": {},
+    "expected": {
+        "ok": false,
+        "errorContains": "Cycle detected"
+    }
+}

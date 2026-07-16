@@ -1,0 +1,56 @@
+{
+    "name": "17-user-input",
+    "description": "User input surfaces submitted values.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "u",
+                    "kind": "user_input",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    },
+                    "config": {
+                        "title": "Confirm"
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "u",
+                    "target": "o"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "u": {
+            "values": {
+                "answer": "yes"
+            }
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "u": {
+                "answer": "yes"
+            },
+            "o": {
+                "answer": "yes"
+            }
+        }
+    }
+}
