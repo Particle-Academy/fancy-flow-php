@@ -68,11 +68,11 @@ final class Builtin
      * Pass {@see ExecutorDeps} to inject real HTTP / LLM / store / notifier
      * clients; omit it for the deterministic framework-free fakes.
      */
-    public static function executors(?ExecutorDeps $deps = null): ExecutorRegistry
+    public static function executors(?ExecutorDeps $deps = null, ?\FancyFlow\Contracts\Resolver $resolver = null): ExecutorRegistry
     {
         $deps ??= new ExecutorDeps();
 
-        return (new ExecutorRegistry())->bindMany([
+        return (new ExecutorRegistry($resolver))->bindMany([
             // triggers
             'manual_trigger' => new ManualTriggerExecutor(),
             'webhook_trigger' => new WebhookTriggerExecutor(),

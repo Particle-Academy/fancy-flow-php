@@ -30,7 +30,11 @@
     },
     "require-dev": {
         "pestphp/pest": "^2.0|^3.0|^4.0",
-        "phpunit/phpunit": "^10.0|^11.0|^12.0"
+        "phpunit/phpunit": "^10.0|^11.0|^12.0",
+        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0"
+    },
+    "suggest": {
+        "illuminate/support": "Enables the optional Laravel layer — service provider, facade, queued durable runs, #[FlowNode] discovery, Artisan, and RunEvent → Laravel events. Compatible with 10.x through 13.x. The framework-free core (Workflow, FlowRunner, registries, the 22 built-ins) needs no framework."
     },
     "autoload": {
         "psr-4": {
@@ -45,6 +49,16 @@
     "scripts": {
         "test": "pest",
         "test-coverage": "pest --coverage"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "FancyFlow\\Laravel\\FancyFlowServiceProvider"
+            ],
+            "aliases": {
+                "FancyFlow": "FancyFlow\\Laravel\\Facades\\FancyFlow"
+            }
+        }
     },
     "minimum-stability": "stable",
     "prefer-stable": true,

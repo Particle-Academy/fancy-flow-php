@@ -13,6 +13,9 @@
         <testsuite name="Parity">
             <directory>tests/Parity</directory>
         </testsuite>
+        <testsuite name="Laravel">
+            <directory>tests/Laravel</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

@@ -17,6 +17,7 @@ use FancyFlow\Schema\PortDescriptor;
 
 uses()->in(__DIR__.'/Unit');
 uses()->in(__DIR__.'/Parity');
+uses(\FancyFlow\Tests\Laravel\TestCase::class)->in(__DIR__.'/Laravel');
 
 /**
  * Build a FlowNode tersely.

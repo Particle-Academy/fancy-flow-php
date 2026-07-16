@@ -48,6 +48,7 @@ final class FlowRunner
     ): RunResult {
         $options ??= new RunOptions();
         $initialInputs = $options->initialInputs;
+        $resumeOutputs = $options->resumeOutputs;
         $signal = $options->signal;
         $timeoutMs = $options->timeoutMs;
 
@@ -99,6 +100,15 @@ final class FlowRunner
                 break;
             }
 
+            // Resume: a node completed in a prior run is not re-executed — its
+            // stored output is republished on its ports (reproducing the same
+            // routing) so downstream nodes see identical inputs.
+            if (array_key_exists($node->id, $resumeOutputs)) {
+                $this->publish($node, $resumeOutputs[$node->id], $outputs, $portValues, $completed, $emit, resumed: true);
+
+                continue;
+            }
+
             $incoming = $incomingByNode[$node->id] ?? [];
 
             // Run once any upstream branch reaches this node. In topo order every
@@ -143,15 +153,7 @@ final class FlowRunner
             try {
                 $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit));
                 $result = $exec($ctx);
-                $outputs[$node->id] = $result;
-
-                $activated = $this->activatedPorts($node, $result);
-                foreach ($activated['ports'] as $portId) {
-                    $portValues[$this->portKey($node->id, $portId)] = $activated['value'];
-                    $emit(RunEvent::nodeOutput($node->id, $portId, $activated['value']));
-                }
-                $completed[$node->id] = true;
-                $emit(RunEvent::nodeStatus($node->id, NodeStatus::DONE));
+                $this->publish($node, $result, $outputs, $portValues, $completed, $emit);
             } catch (Throwable $e) {
                 $msg = $e->getMessage();
                 $errors[] = $msg;
@@ -166,6 +168,35 @@ final class FlowRunner
         $emit(RunEvent::runEnd($ok));
 
         return new RunResult($ok, $outputs, $ok ? null : $errors[0], $events);
+    }
+
+    /**
+     * Record a node's result: store it, publish it on the activated ports, and
+     * mark it done. Shared by normal execution and resume.
+     *
+     * @param array<string,mixed> $outputs
+     * @param array<string,mixed> $portValues
+     * @param array<string,bool>  $completed
+     */
+    private function publish(
+        FlowNode $node,
+        mixed $result,
+        array &$outputs,
+        array &$portValues,
+        array &$completed,
+        callable $emit,
+        bool $resumed = false,
+    ): void {
+        $outputs[$node->id] = $result;
+
+        $activated = $this->activatedPorts($node, $result);
+        foreach ($activated['ports'] as $portId) {
+            $portValues[$this->portKey($node->id, $portId)] = $activated['value'];
+            $emit(RunEvent::nodeOutput($node->id, $portId, $activated['value']));
+        }
+
+        $completed[$node->id] = true;
+        $emit(RunEvent::nodeStatus($node->id, NodeStatus::DONE, $resumed ? 'resumed' : null));
     }
 
     /**

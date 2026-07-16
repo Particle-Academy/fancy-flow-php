@@ -144,6 +144,32 @@ it('captures an executor abort() as a run error', function () {
     expect($result->error)->toBe('nope');
 });
 
+it('resumes without re-executing completed nodes', function () {
+    $graph = ffGraph(
+        [ffNode('a', 'x'), ffNode('b', 'x'), ffNode('c', 'x')],
+        [ffEdge('e1', 'a', 'b'), ffEdge('e2', 'b', 'c')],
+    );
+    $calls = [];
+    $executors = (new ExecutorRegistry())->bind('x', function (ExecutionContext $c) use (&$calls) {
+        $calls[] = $c->node->id;
+        if (in_array($c->node->id, ['a', 'b'], true)) {
+            throw new \RuntimeException('completed node should not re-run: '.$c->node->id);
+        }
+
+        return ['ran' => $c->node->id, 'in' => $c->input('in')];
+    });
+
+    [$result] = runGraph($graph, $executors, new RunOptions(resumeOutputs: [
+        'a' => ['ran' => 'a'],
+        'b' => ['ran' => 'b', 'carried' => true],
+    ]));
+
+    expect($result->ok)->toBeTrue();
+    expect($calls)->toBe(['c']);                                       // only the unfinished node ran
+    expect($result->output('a'))->toBe(['ran' => 'a']);               // completed node republished
+    expect($result->output('c')['in'])->toBe(['ran' => 'b', 'carried' => true]); // c saw b's republished output
+});
+
 it('times out a run between nodes', function () {
     $graph = ffGraph(
         [ffNode('a', 'slow'), ffNode('b', 'slow')],
