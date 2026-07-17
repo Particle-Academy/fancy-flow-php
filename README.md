@@ -154,8 +154,8 @@ Artisan: `flow:run {file} --input=…`, `flow:list-kinds`, `flow:validate {file}
 ### Durable, queued runs
 
 Enable `persistence` + publish the migrations, and dispatch a run onto a queue.
-It **persists a checkpoint after each node**, so a retry resumes from the last
-completed node rather than restarting:
+Each attempt **checkpoints the completed nodes**, so a retry resumes from the
+last completed node rather than restarting:
 
 ```php
 $run = FancyFlow::dispatch($schema, ['trigger-1' => ['payload' => $payload]]);
