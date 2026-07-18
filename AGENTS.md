@@ -55,5 +55,6 @@ envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
-0.1 core (this) → 0.2 Laravel layer → 0.3 durable + agentic → 0.4 Human+ (Reverb
-broadcast + MCP bridge). Plan: envelope `.ai/plans/fancy-flow-php.md`.
+0.1 core (this) → 0.2 Laravel layer → 0.3 durable + agentic → 0.4 durable human
+input (`user_input` pause/resume) → 0.5 Human+ (Reverb broadcast + MCP bridge).
+Plan: envelope `.ai/plans/fancy-flow-php.md`.

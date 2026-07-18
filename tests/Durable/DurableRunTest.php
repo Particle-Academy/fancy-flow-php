@@ -134,6 +134,82 @@ it('routes to the denied branch on deny()', function () {
     expect($run->outputs)->toHaveKey('no'); // the denied branch ran
 });
 
+it('pauses at a user_input node, then resumes with the submitted values', function () {
+    $schema = dschema(
+        [
+            dnode('t', 'manual_trigger'),
+            dnode('form', 'user_input', ['title' => 'Ship details', 'fields' => [['key' => 'note', 'label' => 'Note', 'type' => 'text']]]),
+            dnode('o', 'output'),
+        ],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form'], ['id' => 'e2', 'source' => 'form', 'target' => 'o']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+
+    // Paused awaiting the human form — not completed with empty values.
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+    expect($run->awaiting_node)->toBe('form');
+    expect($run->outputs)->toBeNull();
+
+    // The host can render the paused node's form.
+    expect($run->awaitingForm())->toMatchArray([
+        'nodeId' => 'form',
+        'title' => 'Ship details',
+        'fields' => [['key' => 'note', 'label' => 'Note', 'type' => 'text']],
+    ]);
+
+    // Submit → the job re-runs (sync) and the values flow out of the node.
+    $run->submitInput(values: ['note' => 'looks good']);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect($run->submissions)->toBe(['form' => ['note' => 'looks good']]);
+    expect($run->outputs['form'])->toBe(['note' => 'looks good']);
+});
+
+it('treats an empty submission as a real submission, not another pause', function () {
+    $schema = dschema(
+        [dnode('t', 'manual_trigger'), dnode('form', 'user_input'), dnode('o', 'output')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form'], ['id' => 'e2', 'source' => 'form', 'target' => 'o']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+
+    $run->submitInput(values: []);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+});
+
+it('falls back to the kind configSchema defaults when the node declares no form', function () {
+    $schema = dschema(
+        [dnode('t', 'manual_trigger'), dnode('form', 'user_input')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+
+    $form = $run->awaitingForm();
+    expect($form['nodeId'])->toBe('form');
+    // Defaults come from the `user_input` kind's configSchema.
+    expect($form['title'])->toBe('Need your input');
+    expect($form['fields'])->toBe([['key' => 'answer', 'label' => 'Your answer', 'type' => 'textarea']]);
+});
+
+it('exposes no form when the run is not awaiting input', function () {
+    $schema = dschema([dnode('t', 'manual_trigger'), dnode('o', 'output')], [['id' => 'e1', 'source' => 't', 'target' => 'o']]);
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect($run->awaitingForm())->toBeNull();
+});
+
 /** An executor that always throws — stands in for a failing / not-yet-ready node. */
 final class ExplodingExecutor implements NodeExecutor
 {

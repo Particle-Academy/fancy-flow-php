@@ -159,7 +159,7 @@ last completed node rather than restarting:
 
 ```php
 $run = FancyFlow::dispatch($schema, ['trigger-1' => ['payload' => $payload]]);
-$run->status;   // pending → running → completed | failed | awaiting_approval
+$run->status;   // pending → running → completed | failed | awaiting_approval | awaiting_input
 $run->outputs;  // once completed
 ```
 
@@ -170,6 +170,23 @@ failing — the trust-but-verify staged write. Resume with a recorded decision:
 $run->approve();   // routes down the `approved` branch and continues
 $run->deny();      // routes down `denied`
 ```
+
+A `user_input` node pauses the same way (status `awaiting_input`) instead of
+passing empty values through — the mid-run human form. Render the paused node's
+form, then resume with a **typed values payload**:
+
+```php
+$run->awaitingForm();
+// ['nodeId' => 'form', 'title' => 'Need your input',
+//  'fields' => [['key' => 'answer', 'label' => 'Your answer', 'type' => 'textarea']]]
+
+$run->submitInput(values: ['answer' => 'ship it']);  // emitted on the node's `out`
+```
+
+`awaitingForm()` merges the node's own config over the kind's
+`configSchema`-declared defaults, so a host UI can render the form without
+knowing the kind. Submissions are persisted per node in the `submissions`
+column (`nodeId => values`), beside the bool-only `approvals`.
 
 Expose a flow as a webhook, and give any model its own flows:
 
@@ -209,7 +226,11 @@ composer test
 - **0.3 — durable + agentic** ✅ — queued `RunWorkflowJob` (retries + resume),
   `Workflow`/`WorkflowRun` persistence, `agent` executor, human-in-the-loop
   approval pause, `Route::flow()` webhook.
-- **0.4 — Human+** *(next)* — broadcast run status over Reverb so `<FlowEditor>`
+- **0.4 — durable human input** ✅ — `user_input` pauses the run
+  (`awaiting_input`) and resumes with a typed values payload
+  (`submitInput()` + the `submissions` column), with `awaitingForm()` exposing
+  the paused node's form for a host UI to render.
+- **0.5 — Human+** *(next)* — broadcast run status over Reverb so `<FlowEditor>`
   shows a server run live; MCP bridge so an agent can trigger + watch server runs.
 
 ## License

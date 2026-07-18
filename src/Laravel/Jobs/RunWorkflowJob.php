@@ -8,6 +8,7 @@ use FancyFlow\Laravel\Events\WorkflowFinished;
 use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Nodes\DurableApprovalExecutor;
+use FancyFlow\Laravel\Nodes\DurableUserInputExecutor;
 use FancyFlow\Runtime\RunOptions;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -28,6 +29,11 @@ use Throwable;
  *   - **Approval pause** — a `human_approval` node with no recorded decision
  *     halts the run (status `awaiting_approval`) instead of failing;
  *     {@see WorkflowRun::approve()} records the decision and re-queues this job.
+ *   - **Input pause** — a `user_input` node with no recorded submission halts
+ *     the run (status `awaiting_input`) instead of passing empty values on;
+ *     {@see WorkflowRun::submitInput()} records the typed values payload and
+ *     re-queues this job. {@see WorkflowRun::awaitingForm()} exposes the form
+ *     to render while paused.
  */
 final class RunWorkflowJob implements ShouldQueue
 {
@@ -71,7 +77,14 @@ final class RunWorkflowJob implements ShouldQueue
             $initial[$nodeId] = array_merge($initial[$nodeId] ?? [], ['approved' => $approved]);
         }
 
-        $executors = $flow->executors()->fork()->bind('human_approval', DurableApprovalExecutor::class);
+        // …and recorded form submissions, which resume a paused `user_input`.
+        foreach ($run->submissions ?? [] as $nodeId => $values) {
+            $initial[$nodeId] = array_merge($initial[$nodeId] ?? [], ['values' => $values]);
+        }
+
+        $executors = $flow->executors()->fork()
+            ->bind('human_approval', DurableApprovalExecutor::class)
+            ->bind('user_input', DurableUserInputExecutor::class);
         $options = new RunOptions(
             timeoutMs: config('fancy-flow.timeout_ms'),
             initialInputs: $initial,
@@ -105,6 +118,14 @@ final class RunWorkflowJob implements ShouldQueue
         if (is_string($result->error) && str_starts_with($result->error, DurableApprovalExecutor::PAUSE_PREFIX)) {
             $node = substr($result->error, strlen(DurableApprovalExecutor::PAUSE_PREFIX));
             $run->forceFill(['status' => WorkflowRun::AWAITING_APPROVAL, 'awaiting_node' => $node])->save();
+
+            return;
+        }
+
+        // A user_input node paused the run — halt and wait for the submitted form.
+        if (is_string($result->error) && str_starts_with($result->error, DurableUserInputExecutor::PAUSE_PREFIX)) {
+            $node = substr($result->error, strlen(DurableUserInputExecutor::PAUSE_PREFIX));
+            $run->forceFill(['status' => WorkflowRun::AWAITING_INPUT, 'awaiting_node' => $node])->save();
 
             return;
         }
