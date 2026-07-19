@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace FancyFlow\Laravel\Jobs;
 
+use FancyFlow\Laravel\Events\WorkflowFailed;
 use FancyFlow\Laravel\Events\WorkflowFinished;
+use FancyFlow\Laravel\Events\WorkflowSettled;
 use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Nodes\DurableApprovalExecutor;
@@ -69,6 +71,34 @@ final class RunWorkflowJob implements ShouldQueue
             return;
         }
 
+        // Every exit below must emit exactly one WorkflowSettled, including the
+        // throw that triggers a retry. `WorkflowStarted` fires when the run
+        // begins, so anything a host binds for the run's duration needs a
+        // guaranteed counterpart or it leaks onto the worker (#2).
+        $outcome = WorkflowSettled::ERRORED;
+        $settleError = null;
+
+        try {
+            $this->execute($run, $flow, $events, $outcome, $settleError);
+        } finally {
+            $events->dispatch(new WorkflowSettled($this->runKey, $outcome, $settleError));
+        }
+    }
+
+    /**
+     * The run itself. Reports how it ended through $outcome/$settleError so the
+     * caller's `finally` can settle even when this throws.
+     *
+     * @param  WorkflowSettled::*  $outcome
+     */
+    private function execute(
+        WorkflowRun $run,
+        FancyFlowManager $flow,
+        Dispatcher $events,
+        ?string &$outcome,
+        ?string &$settleError,
+    ): void {
+
         $run->forceFill(['status' => WorkflowRun::RUNNING, 'attempts' => $run->attempts + 1])->save();
 
         // Merge recorded approval decisions into the entry inputs for their nodes.
@@ -110,6 +140,7 @@ final class RunWorkflowJob implements ShouldQueue
                 'error' => null,
             ])->save();
             $events->dispatch(new WorkflowFinished($run->run_key, true, $result->outputs));
+            $outcome = WorkflowSettled::COMPLETED;
 
             return;
         }
@@ -118,6 +149,7 @@ final class RunWorkflowJob implements ShouldQueue
         if (is_string($result->error) && str_starts_with($result->error, DurableApprovalExecutor::PAUSE_PREFIX)) {
             $node = substr($result->error, strlen(DurableApprovalExecutor::PAUSE_PREFIX));
             $run->forceFill(['status' => WorkflowRun::AWAITING_APPROVAL, 'awaiting_node' => $node])->save();
+            $outcome = WorkflowSettled::AWAITING_APPROVAL;
 
             return;
         }
@@ -126,12 +158,14 @@ final class RunWorkflowJob implements ShouldQueue
         if (is_string($result->error) && str_starts_with($result->error, DurableUserInputExecutor::PAUSE_PREFIX)) {
             $node = substr($result->error, strlen(DurableUserInputExecutor::PAUSE_PREFIX));
             $run->forceFill(['status' => WorkflowRun::AWAITING_INPUT, 'awaiting_node' => $node])->save();
+            $outcome = WorkflowSettled::AWAITING_INPUT;
 
             return;
         }
 
         // Genuine failure — throw so the queue retries (resuming from the checkpoint).
-        throw new WorkflowRunFailed($result->error ?? 'workflow run failed');
+        $settleError = $result->error ?? 'workflow run failed';
+        throw new WorkflowRunFailed($settleError);
     }
 
     public function failed(Throwable $e): void
@@ -141,5 +175,12 @@ final class RunWorkflowJob implements ShouldQueue
             ->first()
             ?->forceFill(['status' => WorkflowRun::FAILED, 'error' => $e->getMessage()])
             ->save();
+
+        // The run is terminally failed once retries are exhausted, and nothing
+        // announced it — only the success path dispatched an outcome event.
+        // WorkflowSettled is NOT re-emitted here: each attempt already settled
+        // in handle()'s finally, so a second one would report teardown for a
+        // run that was already torn down.
+        event(new WorkflowFailed($this->runKey, $e->getMessage()));
     }
 }

@@ -5,8 +5,10 @@ declare(strict_types=1);
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Laravel\Facades\FancyFlow;
 use FancyFlow\Laravel\Models\WorkflowRun;
+use FancyFlow\Laravel\Events\WorkflowSettled;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Workflow;
+use Illuminate\Support\Facades\Event;
 
 uses(\FancyFlow\Tests\Durable\DurableTestCase::class);
 
@@ -218,3 +220,87 @@ final class ExplodingExecutor implements NodeExecutor
         throw new \RuntimeException('boom');
     }
 }
+
+// ── Terminal settle events (#2) ─────────────────────────────────────────────
+//
+// WorkflowStarted always fired, but only the success path emitted a terminal
+// event, so anything a host bound for the run's duration (an ambient run
+// context, a listener) leaked onto the queue worker when a run paused, failed,
+// or threw. WorkflowSettled is the guaranteed counterpart — exactly one per
+// in-process attempt, on EVERY exit path.
+
+it('settles as completed when a run finishes', function () {
+    Event::fake([WorkflowSettled::class]);
+
+    FancyFlow::dispatch(
+        dschema([dnode('t', 'manual_trigger'), dnode('o', 'output')], [['id' => 'e1', 'source' => 't', 'target' => 'o']]),
+        ['t' => ['n' => 1]],
+    );
+
+    Event::assertDispatched(WorkflowSettled::class, function (WorkflowSettled $e) {
+        return $e->outcome === WorkflowSettled::COMPLETED && $e->isTerminal();
+    });
+});
+
+it('settles exactly once per attempt', function () {
+    Event::fake([WorkflowSettled::class]);
+
+    FancyFlow::dispatch(
+        dschema([dnode('t', 'manual_trigger'), dnode('o', 'output')], [['id' => 'e1', 'source' => 't', 'target' => 'o']]),
+        ['t' => ['n' => 1]],
+    );
+
+    Event::assertDispatchedTimes(WorkflowSettled::class, 1);
+});
+
+it('settles when a run pauses awaiting approval', function () {
+    Event::fake([WorkflowSettled::class]);
+
+    FancyFlow::dispatch(
+        dschema(
+            [dnode('t', 'manual_trigger'), dnode('a', 'human_approval'), dnode('o', 'output')],
+            [['id' => 'e1', 'source' => 't', 'target' => 'a'], ['id' => 'e2', 'source' => 'a', 'target' => 'o']],
+        ),
+        ['t' => ['n' => 1]],
+    );
+
+    // A pause is not a failure, but it IS the end of this in-process attempt —
+    // the host must still unbind.
+    Event::assertDispatched(WorkflowSettled::class, function (WorkflowSettled $e) {
+        return $e->outcome === WorkflowSettled::AWAITING_APPROVAL
+            && $e->isAwaitingHuman()
+            && ! $e->isTerminal();
+    });
+});
+
+it('settles when a run pauses awaiting user input', function () {
+    Event::fake([WorkflowSettled::class]);
+
+    FancyFlow::dispatch(
+        dschema(
+            [dnode('t', 'manual_trigger'), dnode('u', 'user_input'), dnode('o', 'output')],
+            [['id' => 'e1', 'source' => 't', 'target' => 'u'], ['id' => 'e2', 'source' => 'u', 'target' => 'o']],
+        ),
+        ['t' => ['n' => 1]],
+    );
+
+    Event::assertDispatched(WorkflowSettled::class, fn (WorkflowSettled $e) => $e->outcome === WorkflowSettled::AWAITING_INPUT);
+});
+
+it('settles with the error when a node throws, so the context still unbinds', function () {
+    FancyFlow::extend('explode', ExplodingExecutor::class, ['name' => 'explode', 'category' => 'logic', 'label' => 'Explode']);
+    Event::fake([WorkflowSettled::class]);
+
+    try {
+        FancyFlow::dispatch(
+            dschema([dnode('t', 'manual_trigger'), dnode('x', 'explode')], [['id' => 'e1', 'source' => 't', 'target' => 'x']]),
+            ['t' => ['n' => 1]],
+        );
+    } catch (Throwable) {
+        // The sync queue surfaces the retry throw; the settle must still fire.
+    }
+
+    Event::assertDispatched(WorkflowSettled::class, function (WorkflowSettled $e) {
+        return $e->outcome === WorkflowSettled::ERRORED && $e->error !== null;
+    });
+});
