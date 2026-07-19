@@ -7,6 +7,7 @@ namespace FancyFlow\Engine;
 use Closure;
 use FancyFlow\ExecutorRegistry;
 use FancyFlow\Exceptions\RunAborted;
+use FancyFlow\NodeKindRegistry;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\NodeStatus;
 use FancyFlow\Runtime\RunEvent;
@@ -321,12 +322,34 @@ final class FlowRunner
             }
         }
 
-        // Declared output ports, or a single `out`. Null (ports not declared)
-        // falls back to `out`; an explicitly-empty array yields zero ports.
-        if ($node->outputs === null) {
+        // Declared output ports, or a single `out`. An explicitly-empty array
+        // yields zero ports.
+        //
+        // When the node declares none, fall back to the KIND's ports before
+        // falling back to `out`. The TS side resolves ports through its kind
+        // (including config-driven kinds like `switch_case`, whose ports come
+        // from its `cases` map), and it now serializes the resolved ports into
+        // the document. This fallback covers hand-written schemas that omit
+        // them: without it a branch node collapses to a single `out` here while
+        // routing correctly on Node, breaking the same-JSON-same-outputs
+        // guarantee this port exists to uphold.
+        $declared = $node->outputs;
+        $kindName = $node->kind();
+        if ($declared === null && $kindName !== null) {
+            $kindPorts = NodeKindRegistry::default()->get($kindName)?->outputs;
+            // Only adopt NON-EMPTY kind ports. A terminal kind (category
+            // "output") declares an empty list, and consuming that literally
+            // would publish zero ports where the historical fallback published
+            // `out` — silently cutting every chain through such a node.
+            if ($kindPorts !== null && $kindPorts !== []) {
+                $declared = $kindPorts;
+            }
+        }
+
+        if ($declared === null) {
             $ports = ['out'];
         } else {
-            $ports = array_map(static fn (PortDescriptor $p) => $p->id, $node->outputs);
+            $ports = array_map(static fn (PortDescriptor $p) => $p->id, $declared);
         }
 
         return ['ports' => $ports, 'value' => $result];

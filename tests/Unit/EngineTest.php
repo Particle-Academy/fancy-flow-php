@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use FancyFlow\Engine\FlowRunner;
 use FancyFlow\ExecutorRegistry;
+use FancyFlow\NodeKindRegistry;
+use FancyFlow\Registry\NodeKind;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\Port;
 use FancyFlow\Runtime\RunEvent;
@@ -200,4 +202,101 @@ it('streams a well-formed event sequence', function () {
     expect(end($types))->toBe('run-end');
     expect($types)->toContain('node-status');
     expect($types)->toContain('node-output');
+});
+
+// ── Cross-runtime port parity ───────────────────────────────────────────────
+//
+// The guarantee is "same WorkflowSchema JSON in, same outputs out" on Node and
+// PHP. The TS side resolves a node's ports through its KIND — including kinds
+// whose ports derive from config (switch_case's `cases`, llm_branch's
+// `routes`). PHP cannot execute a JS port function, so it relies on the
+// document carrying the resolved ports, with the kind registry as the fallback
+// for hand-written schemas. Without either, a branch node collapses to a single
+// `out` here while routing correctly on Node.
+
+it('activates the ports a document declares, not a lone out', function () {
+    $seen = [];
+    $graph = ffGraph(
+        [
+            ffNode('sw', 'switch_case', outputs: ['case_a', 'case_b']),
+            ffNode('A', 'sink'),
+            ffNode('B', 'sink'),
+        ],
+        [
+            ffEdge('e1', 'sw', 'A', 'case_a'),
+            ffEdge('e2', 'sw', 'B', 'case_b'),
+        ],
+    );
+    $executors = (new ExecutorRegistry())
+        ->bind('switch_case', fn () => ['k' => 1])
+        ->bind('sink', function (ExecutionContext $c) use (&$seen) {
+            $seen[] = $c->node->id;
+
+            return $c->node->id;
+        });
+
+    [$result] = runGraph($graph, $executors);
+
+    expect($result->ok)->toBeTrue();
+    expect($seen)->toBe(['A', 'B']);
+});
+
+it('falls back to the kind registry when a hand-written schema omits ports', function () {
+    NodeKindRegistry::default()->register(new NodeKind(
+        name: 'brancher',
+        category: 'logic',
+        label: 'Brancher',
+        outputs: [new \FancyFlow\Schema\PortDescriptor('left'), new \FancyFlow\Schema\PortDescriptor('right')],
+    ));
+
+    $seen = [];
+    $graph = ffGraph(
+        [ffNode('b', 'brancher'), ffNode('L', 'sink'), ffNode('R', 'sink')],
+        [ffEdge('e1', 'b', 'L', 'left'), ffEdge('e2', 'b', 'R', 'right')],
+    );
+    $executors = (new ExecutorRegistry())
+        ->bind('brancher', fn () => ['x' => 1])
+        ->bind('sink', function (ExecutionContext $c) use (&$seen) {
+            $seen[] = $c->node->id;
+
+            return $c->node->id;
+        });
+
+    [$result] = runGraph($graph, $executors);
+
+    expect($result->ok)->toBeTrue();
+    expect($seen)->toBe(['L', 'R']);
+
+    NodeKindRegistry::resetDefault();
+});
+
+it('keeps publishing on out for a terminal kind that declares no ports', function () {
+    // A category-"output" kind declares an EMPTY port list. Consuming that
+    // literally would publish nothing and cut every chain through such a node.
+    NodeKindRegistry::default()->register(new NodeKind(
+        name: 'terminal',
+        category: 'output',
+        label: 'Terminal',
+        outputs: [],
+    ));
+
+    $seen = [];
+    $graph = ffGraph(
+        [ffNode('t', 'terminal'), ffNode('next', 'sink')],
+        [ffEdge('e1', 't', 'next')],
+    );
+    $executors = (new ExecutorRegistry())
+        ->bind('terminal', fn () => 'done')
+        ->bind('sink', function (ExecutionContext $c) use (&$seen) {
+            $seen[] = $c->node->id;
+
+            return $c->node->id;
+        });
+
+    [$result] = runGraph($graph, $executors);
+
+    expect($result->ok)->toBeTrue();
+    expect($seen)->toBe(['next']);
+
+    NodeKindRegistry::resetDefault();
 });
