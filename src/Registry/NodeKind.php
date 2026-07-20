@@ -36,6 +36,15 @@ final class NodeKind
         public readonly ?array $inputs = null,
         public readonly ?array $outputs = null,
         public readonly array $aliases = [],
+        /**
+         * Declares that this kind halts the run to wait for a person, and what
+         * for — `approval`, `input`, or a node's own (`signature`, `payment`).
+         *
+         * Only a declaration; the executor still emits the pause. Its value is
+         * that it is readable WITHOUT running the graph, so a host learns it
+         * needs a resume path before the first run parks itself forever.
+         */
+        public readonly ?string $pausesForHuman = null,
     ) {}
 
     /**
@@ -79,6 +88,7 @@ final class NodeKind
                 static fn (mixed $a): string => (string) $a,
                 is_array($raw['aliases'] ?? null) ? $raw['aliases'] : [],
             )),
+            pausesForHuman: isset($raw['pausesForHuman']) ? (string) $raw['pausesForHuman'] : null,
         );
     }
 
@@ -125,6 +135,9 @@ final class NodeKind
         }
         if ($this->aliases !== []) {
             $out['aliases'] = $this->aliases;
+        }
+        if ($this->pausesForHuman !== null) {
+            $out['pausesForHuman'] = $this->pausesForHuman;
         }
 
         return $out;

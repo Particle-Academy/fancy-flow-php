@@ -27,6 +27,14 @@ class WorkflowRun extends Model
     public const RUNNING = 'running';
     public const AWAITING_APPROVAL = 'awaiting_approval';
     public const AWAITING_INPUT = 'awaiting_input';
+    /**
+     * A run parked on a wait this package does not define — a marketplace
+     * node's own (`signature`, `payment`, …). `awaiting_kind` carries which.
+     *
+     * Approval and input keep their dedicated statuses rather than folding into
+     * this one, because hosts already query on them.
+     */
+    public const AWAITING_HUMAN = 'awaiting_human';
     public const COMPLETED = 'completed';
     public const FAILED = 'failed';
 
@@ -40,6 +48,7 @@ class WorkflowRun extends Model
         'events' => 'array',
         'approvals' => 'array',
         'submissions' => 'array',
+        'awaiting_detail' => 'array',
         'attempts' => 'integer',
     ];
 
@@ -69,6 +78,48 @@ class WorkflowRun extends Model
         return $this->status === self::AWAITING_INPUT;
     }
 
+    /** Waiting on a person, whichever flavour — including a third-party wait. */
+    public function isAwaitingHuman(): bool
+    {
+        return in_array(
+            $this->status,
+            [self::AWAITING_APPROVAL, self::AWAITING_INPUT, self::AWAITING_HUMAN],
+            true,
+        );
+    }
+
+    /**
+     * What this run is waiting for — `approval`, `input`, or a node's own.
+     *
+     * Falls back to inferring from `status` so runs that parked BEFORE the
+     * pause contract (and therefore have no `awaiting_kind`) still answer
+     * correctly rather than returning null and looking un-paused.
+     */
+    public function awaitingKind(): ?string
+    {
+        if (is_string($this->awaiting_kind) && $this->awaiting_kind !== '') {
+            return $this->awaiting_kind;
+        }
+
+        return match ($this->status) {
+            self::AWAITING_APPROVAL => 'approval',
+            self::AWAITING_INPUT => 'input',
+            default => null,
+        };
+    }
+
+    /**
+     * Resume a run parked on a third-party wait.
+     *
+     * The submitted payload is delivered exactly the way `user_input` receives
+     * its form values, so a marketplace node reads `$ctx->inputs['values']`
+     * with no bespoke resume plumbing.
+     */
+    public function submitHuman(?string $nodeId = null, mixed $payload = null): static
+    {
+        return $this->submitInput($nodeId, is_array($payload) ? $payload : ['value' => $payload]);
+    }
+
     /**
      * Submit the paused `user_input` node's form values and resume the run.
      * The values are emitted on the node's `out` port when the run continues.
@@ -86,6 +137,8 @@ class WorkflowRun extends Model
             'submissions' => $submissions,
             'status' => self::PENDING,
             'awaiting_node' => null,
+            'awaiting_kind' => null,
+            'awaiting_detail' => null,
         ])->save();
 
         RunWorkflowJob::enqueue($this);
@@ -154,6 +207,8 @@ class WorkflowRun extends Model
             'approvals' => $approvals,
             'status' => self::PENDING,
             'awaiting_node' => null,
+            'awaiting_kind' => null,
+            'awaiting_detail' => null,
         ])->save();
 
         RunWorkflowJob::enqueue($this);

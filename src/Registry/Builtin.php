@@ -230,6 +230,7 @@ final class Builtin
             [
                 'name' => 'user_input', 'category' => 'human', 'label' => 'User Input',
                 'description' => 'Pause the flow until the user submits the configured form.', 'icon' => '✎',
+                'pausesForHuman' => 'input',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'out', 'label' => 'values']],
                 'configSchema' => [
                     ['type' => 'text', 'key' => 'title', 'label' => 'Form title', 'default' => 'Need your input'],
@@ -456,6 +457,7 @@ final class Builtin
             [
                 'name' => 'human_approval', 'category' => 'human', 'label' => 'Human Approval',
                 'description' => 'Pause until a human approves or denies.', 'icon' => '✓',
+                'pausesForHuman' => 'approval',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'approved', 'label' => 'approved'], ['id' => 'denied', 'label' => 'denied']],
                 'configSchema' => [
                     ['type' => 'text', 'key' => 'title', 'label' => 'Approval title', 'default' => 'Approve action'],

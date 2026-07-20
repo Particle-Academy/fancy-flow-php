@@ -11,6 +11,7 @@ use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Nodes\DurableApprovalExecutor;
 use FancyFlow\Laravel\Nodes\DurableUserInputExecutor;
+use FancyFlow\Runtime\Pause;
 use FancyFlow\Runtime\RunOptions;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -145,20 +146,34 @@ final class RunWorkflowJob implements ShouldQueue
             return;
         }
 
-        // A human_approval node paused the run — halt and wait for a decision.
-        if (is_string($result->error) && str_starts_with($result->error, DurableApprovalExecutor::PAUSE_PREFIX)) {
-            $node = substr($result->error, strlen(DurableApprovalExecutor::PAUSE_PREFIX));
-            $run->forceFill(['status' => WorkflowRun::AWAITING_APPROVAL, 'awaiting_node' => $node])->save();
-            $outcome = WorkflowSettled::AWAITING_APPROVAL;
+        // A node paused the run to wait for a person — halt rather than fail.
+        //
+        // One decode, not a branch per kind. This used to be two str_starts_with
+        // checks against constants owned by two BUILTIN executors, which meant a
+        // third-party human-input node could not participate at all: its pause
+        // fell through to the failure path below and the queue retried it until
+        // it exhausted its tries. Pause::decode understands the public contract
+        // AND both legacy prefixes, so runs parked by an older version still
+        // resume here.
+        if ($pause = Pause::decode($result->error)) {
+            $run->forceFill([
+                'status' => match ($pause->awaiting) {
+                    'approval' => WorkflowRun::AWAITING_APPROVAL,
+                    'input' => WorkflowRun::AWAITING_INPUT,
+                    // A wait this package does not define. Recording the kind is
+                    // what lets a host render the right prompt on resume.
+                    default => WorkflowRun::AWAITING_HUMAN,
+                },
+                'awaiting_node' => $pause->nodeId,
+                'awaiting_kind' => $pause->awaiting,
+                'awaiting_detail' => $pause->detail,
+            ])->save();
 
-            return;
-        }
-
-        // A user_input node paused the run — halt and wait for the submitted form.
-        if (is_string($result->error) && str_starts_with($result->error, DurableUserInputExecutor::PAUSE_PREFIX)) {
-            $node = substr($result->error, strlen(DurableUserInputExecutor::PAUSE_PREFIX));
-            $run->forceFill(['status' => WorkflowRun::AWAITING_INPUT, 'awaiting_node' => $node])->save();
-            $outcome = WorkflowSettled::AWAITING_INPUT;
+            $outcome = match ($pause->awaiting) {
+                'approval' => WorkflowSettled::AWAITING_APPROVAL,
+                'input' => WorkflowSettled::AWAITING_INPUT,
+                default => WorkflowSettled::AWAITING_HUMAN,
+            };
 
             return;
         }

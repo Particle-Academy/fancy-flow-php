@@ -39,6 +39,25 @@ final class ExecutionContext
         throw new RunAborted($reason ?? 'aborted');
     }
 
+    /**
+     * Halt the run to wait for a person.
+     *
+     * Node authors should reach for this rather than hand-encoding a reason, so
+     * the format stays ours to change:
+     *
+     *     $values = $ctx->inputs['values'] ?? null;
+     *     if ($values === null) {
+     *         $ctx->pauseForHuman('input', ['fields' => $fields]);
+     *     }
+     *
+     * Note the strict null check — an empty submission (`[]`) is a real answer
+     * and must resume. A truthiness test pauses forever on an empty form.
+     */
+    public function pauseForHuman(string $awaiting, mixed $detail = null): never
+    {
+        $this->abort(Pause::encode(new PauseSignal($this->node->id, $awaiting, $detail)));
+    }
+
     /** Stream a status update or partial output to the run feed. */
     public function emit(RunEvent $event): void
     {

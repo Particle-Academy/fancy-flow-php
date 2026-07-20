@@ -8,6 +8,82 @@ upgrading.
 
 ---
 
+## 0.7.0
+
+### Added - the human-pause contract (`FancyFlow\Runtime\Pause`)
+
+A run waiting for a person is not a failure, but it travels the same channel as
+one: the executor aborts, the runner records a reason, and `RunWorkflowJob`
+decides what that reason meant.
+
+Until now that decision was **two `str_starts_with` checks** against
+`PAUSE_PREFIX` constants owned by two BUILTIN executors. A third-party
+human-input node could not participate at all - its pause fell through to the
+failure path and the queue retried it until it exhausted its tries. Reported by
+the MOIC Suite consumer, who needed exactly that seam.
+
+```php
+// In a node:
+$values = $ctx->inputs['values'] ?? null;
+if ($values === null) {
+    $ctx->pauseForHuman('signature', ['document' => 'nda.pdf']);
+}
+
+// In a runner:
+if ($pause = Pause::decode($result->error)) { /* park it, do not fail it */ }
+```
+
+The wire format is **byte-identical to the TypeScript twin** - pinned by tests
+against strings produced by `@particle-academy/fancy-flow`'s `encodePause()`,
+and verified in both directions. That is what lets a consumer author in TS and
+execute here without pause semantics quietly diverging.
+
+`awaiting` is open, not an enum: `approval` and `input` are what the builtins
+emit, but a marketplace node may define its own.
+
+### Added - third-party waits are first-class
+
+- `WorkflowRun::AWAITING_HUMAN` - status for a wait this package does not
+  define. Approval and input keep their own statuses, because hosts already
+  query on them.
+- New nullable columns `awaiting_kind` + `awaiting_detail` (additive migration),
+  so a host can render a prompt for a wait it has never heard of.
+- `WorkflowRun::awaitingKind()`, `isAwaitingHuman()`, `submitHuman()`.
+- `WorkflowSettled::AWAITING_HUMAN`; `isAwaitingHuman()` now covers it.
+- `NodeKind::$pausesForHuman` - a kind declares its wait, readable WITHOUT
+  running the graph, so a host learns it needs a resume path before the first
+  run parks itself forever. Declared on `user_input` and `human_approval`.
+
+### Added - marketplace contracts (`FancyFlow\Marketplace`)
+
+- `NodeManifest` - validates a node package manifest, agreeing kind-for-kind
+  with the TS validator. `checkRuntimeSupport()` is the check that makes a
+  TS-only package visible to a PHP host BEFORE install rather than at the first
+  run.
+- `FixtureRunner` - runs a node's golden fixtures here. A case asserts that
+  **the downstream node executed**, not the port the node recorded, because a
+  recorded-port assertion stays green while no edge fires and the run reports
+  success having done nothing.
+
+### Fixed
+
+- Both runners honour a case's declared `ports`. TS derives config-driven ports
+  by running a JS function and PHP cannot, so without this the identical fixture
+  built a different graph on each runtime - the fixtures silently stopped
+  comparing like with like. Requires fancy-flow >= 0.15.1.
+
+### Nothing breaks
+
+The pre-contract `awaiting-approval:` / `awaiting-input:` prefixes are still
+decoded, and both constants remain (deprecated). Runs parked by an older version
+still resume, and a node built against the old private constant keeps working -
+there is a test for each.
+
+**What to do:** run `php artisan migrate` for the two new nullable columns.
+Existing pause code needs no change.
+
+---
+
 ## 0.6.0
 
 ### BREAKING — the PHP floor is now 8.3

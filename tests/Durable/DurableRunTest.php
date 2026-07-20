@@ -221,6 +221,24 @@ final class ExplodingExecutor implements NodeExecutor
     }
 }
 
+/**
+ * A third-party human-input node — the case the old two-prefix seam could not
+ * express. It waits for a `signature`, which this package knows nothing about.
+ */
+final class CountersignExecutor implements NodeExecutor
+{
+    public function execute(ExecutionContext $ctx): mixed
+    {
+        $signed = $ctx->inputs['values'] ?? null;
+
+        if ($signed === null) {
+            $ctx->pauseForHuman('signature', ['document' => $ctx->option('document', 'contract.pdf')]);
+        }
+
+        return $signed;
+    }
+}
+
 // ── Terminal settle events (#2) ─────────────────────────────────────────────
 //
 // WorkflowStarted always fired, but only the success path emitted a terminal
@@ -304,3 +322,109 @@ it('settles with the error when a node throws, so the context still unbinds', fu
         return $e->outcome === WorkflowSettled::ERRORED && $e->error !== null;
     });
 });
+
+// ── Third-party pauses (the pause contract) ────────────────────────────────
+//
+// Before the contract, RunWorkflowJob matched two hardcoded prefixes owned by
+// two BUILTIN executors. A marketplace node's pause fell through to the failure
+// path and the queue retried it until it exhausted its tries. These pin that a
+// wait this package does not define is now a first-class pause.
+
+function countersignKind(): array
+{
+    return [
+        'name' => 'countersign', 'category' => 'human', 'label' => 'Countersign',
+        'pausesForHuman' => 'signature',
+        'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'out']],
+    ];
+}
+
+it('parks a run on a third-party wait instead of failing it', function () {
+    FancyFlow::extend('countersign', CountersignExecutor::class, countersignKind());
+
+    $run = FancyFlow::dispatch(dschema(
+        [dnode('t', 'manual_trigger'), dnode('c', 'countersign', ['document' => 'nda.pdf']), dnode('o', 'output')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'c'], ['id' => 'e2', 'source' => 'c', 'target' => 'o']],
+    ));
+
+    $run->refresh();
+
+    // Parked, not failed — and the queue is not retrying it.
+    expect($run->status)->toBe(WorkflowRun::AWAITING_HUMAN);
+    expect($run->isAwaitingHuman())->toBeTrue();
+    expect($run->awaiting_node)->toBe('c');
+
+    // The kind and its detail survive, which is what lets a host render a
+    // prompt for a wait it has never heard of.
+    expect($run->awaitingKind())->toBe('signature');
+    expect($run->awaiting_detail)->toBe(['document' => 'nda.pdf']);
+});
+
+it('resumes a third-party wait and finishes the run', function () {
+    FancyFlow::extend('countersign', CountersignExecutor::class, countersignKind());
+
+    $run = FancyFlow::dispatch(dschema(
+        [dnode('t', 'manual_trigger'), dnode('c', 'countersign'), dnode('o', 'output')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'c'], ['id' => 'e2', 'source' => 'c', 'target' => 'o']],
+    ));
+
+    $run->refresh()->submitHuman('c', ['signedBy' => 'ada']);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect($run->outputs['o'])->toBe(['signedBy' => 'ada']);
+
+    // The pause columns are cleared, so a resumed run does not look parked.
+    expect($run->awaiting_node)->toBeNull();
+    expect($run->awaitingKind())->toBeNull();
+});
+
+it('still parks runs that emit the pre-contract prefixes', function () {
+    // A node built against the old private constant must keep working — there
+    // are published packages doing exactly that.
+    FancyFlow::extend('legacy_wait', function (ExecutionContext $ctx) {
+        $ctx->abort('awaiting-input:'.$ctx->node->id);
+    }, ['name' => 'legacy_wait', 'category' => 'human', 'label' => 'Legacy Wait',
+        'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'out']]]);
+
+    $run = FancyFlow::dispatch(dschema(
+        [dnode('t', 'manual_trigger'), dnode('w', 'legacy_wait')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'w']],
+    ));
+
+    $run->refresh();
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+    expect($run->awaiting_node)->toBe('w');
+    expect($run->awaitingKind())->toBe('input');
+});
+
+it('settles a third-party pause as awaiting-human, not as a failure', function () {
+    Event::fake([WorkflowSettled::class]);
+
+    FancyFlow::extend('countersign', CountersignExecutor::class, countersignKind());
+
+    FancyFlow::dispatch(dschema(
+        [dnode('t', 'manual_trigger'), dnode('c', 'countersign')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'c']],
+    ));
+
+    Event::assertDispatched(WorkflowSettled::class, function (WorkflowSettled $e) {
+        return $e->outcome === WorkflowSettled::AWAITING_HUMAN
+            && $e->isAwaitingHuman()
+            && ! $e->isTerminal();
+    });
+});
+
+// ── Kinds declare their wait ───────────────────────────────────────────────
+
+it('declares pausesForHuman on the builtins that wait', function (string $kind, string $awaiting) {
+    expect(app(\FancyFlow\NodeKindRegistry::class)->get($kind)?->pausesForHuman)->toBe($awaiting);
+})->with([
+    ['user_input', 'input'],
+    ['human_approval', 'approval'],
+]);
+
+it('leaves kinds that never wait unmarked', function (string $kind) {
+    // The declaration is only useful if it is accurate.
+    expect(app(\FancyFlow\NodeKindRegistry::class)->get($kind)?->pausesForHuman)->toBeNull();
+})->with(['transform', 'branch', 'output']);

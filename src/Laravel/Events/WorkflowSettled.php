@@ -28,6 +28,11 @@ final class WorkflowSettled
     public const FAILED = 'failed';
     public const AWAITING_APPROVAL = 'awaiting_approval';
     public const AWAITING_INPUT = 'awaiting_input';
+    /**
+     * Parked on a wait this package does not define — a marketplace node's own.
+     * `WorkflowRun::awaitingKind()` says which.
+     */
+    public const AWAITING_HUMAN = 'awaiting_human';
     /** The attempt ended by throwing — the queue may retry it. */
     public const ERRORED = 'errored';
 
@@ -47,6 +52,10 @@ final class WorkflowSettled
     /** True when the run stopped to wait on a human decision or submission. */
     public function isAwaitingHuman(): bool
     {
-        return $this->outcome === self::AWAITING_APPROVAL || $this->outcome === self::AWAITING_INPUT;
+        return in_array(
+            $this->outcome,
+            [self::AWAITING_APPROVAL, self::AWAITING_INPUT, self::AWAITING_HUMAN],
+            true,
+        );
     }
 }
