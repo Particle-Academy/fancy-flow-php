@@ -208,7 +208,7 @@ it('streams a well-formed event sequence', function () {
 //
 // The guarantee is "same WorkflowSchema JSON in, same outputs out" on Node and
 // PHP. The TS side resolves a node's ports through its KIND — including kinds
-// whose ports derive from config (switch_case's `cases`, llm_branch's
+// whose ports derive from config (switch_case's `cases`, llm_router's
 // `routes`). PHP cannot execute a JS port function, so it relies on the
 // document carrying the resolved ports, with the kind registry as the fallback
 // for hand-written schemas. Without either, a branch node collapses to a single

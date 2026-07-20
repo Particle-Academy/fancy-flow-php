@@ -31,10 +31,13 @@
     "require-dev": {
         "pestphp/pest": "^2.0|^3.0|^4.0",
         "phpunit/phpunit": "^10.0|^11.0|^12.0",
-        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0"
+        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0",
+        "prism-php/prism": "^0.100"
     },
     "suggest": {
-        "illuminate/support": "Enables the optional Laravel layer — service provider, facade, queued durable runs, #[FlowNode] discovery, Artisan, and RunEvent → Laravel events. Compatible with 10.x through 13.x. The framework-free core (Workflow, FlowRunner, registries, the 22 built-ins) needs no framework."
+        "illuminate/support": "Enables the optional Laravel layer — service provider, facade, queued durable runs, #[FlowNode] discovery, Artisan, and RunEvent → Laravel events. Compatible with 10.x through 13.x. The framework-free core (Workflow, FlowRunner, registries, the 24 built-ins) needs no framework.",
+        "prism-php/prism": "Makes the `llm_branch` node work with zero glue — auto-detected and wired through the shipped Prism adapter (structured output constrained to the declared routes).",
+        "laravel/ai": "Makes the `llm_branch` node work with zero glue — auto-detected and wired through the shipped laravel/ai adapter (structured output constrained to the declared routes)."
     },
     "autoload": {
         "psr-4": {

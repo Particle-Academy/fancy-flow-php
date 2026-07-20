@@ -23,11 +23,14 @@ final class ExecutionContext
     /**
      * @param array<string,mixed>     $inputs
      * @param Closure(RunEvent):void  $emit
+     * @param int                     $depth how deep this run is nested; `subflow`
+     *        reads it to enforce a depth limit and passes depth + 1 to its child.
      */
     public function __construct(
         public readonly FlowNode $node,
         public readonly array $inputs,
         private readonly Closure $emit,
+        public readonly int $depth = 0,
     ) {}
 
     /** Stop the run. Throws {@see RunAborted}; the runner records the reason. */

@@ -22,6 +22,7 @@ final class NodeKind
      * @param array<string,mixed>       $defaultConfig
      * @param list<PortDescriptor>|null $inputs
      * @param list<PortDescriptor>|null $outputs
+     * @param list<string>              $aliases previous ids this kind still answers to
      */
     public function __construct(
         public readonly string $name,
@@ -34,7 +35,22 @@ final class NodeKind
         public readonly array $defaultConfig = [],
         public readonly ?array $inputs = null,
         public readonly ?array $outputs = null,
+        public readonly array $aliases = [],
     ) {}
+
+    /**
+     * Every id this kind answers to — canonical first.
+     *
+     * Anything keyed by kind name (executor bindings, node-type maps) must key
+     * on ALL of these: a host that bound an executor under the bare name has to
+     * keep working, or a rename is a breaking change in disguise.
+     *
+     * @return list<string>
+     */
+    public function ids(): array
+    {
+        return array_values(array_unique([$this->name, ...$this->aliases]));
+    }
 
     /**
      * Hydrate from an array literal (the shape used by the built-in library and
@@ -59,6 +75,10 @@ final class NodeKind
             defaultConfig: $raw['defaultConfig'] ?? [],
             inputs: self::ports($raw, 'inputs'),
             outputs: self::ports($raw, 'outputs'),
+            aliases: array_values(array_map(
+                static fn (mixed $a): string => (string) $a,
+                is_array($raw['aliases'] ?? null) ? $raw['aliases'] : [],
+            )),
         );
     }
 
@@ -102,6 +122,9 @@ final class NodeKind
         }
         if ($this->outputs !== null) {
             $out['outputs'] = array_map(static fn (PortDescriptor $p) => $p->toArray(), $this->outputs);
+        }
+        if ($this->aliases !== []) {
+            $out['aliases'] = $this->aliases;
         }
 
         return $out;

@@ -8,6 +8,7 @@ use Closure;
 use FancyFlow\ExecutorRegistry;
 use FancyFlow\Exceptions\RunAborted;
 use FancyFlow\NodeKindRegistry;
+use FancyFlow\Registry\KindId;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\NodeStatus;
 use FancyFlow\Runtime\RunEvent;
@@ -131,8 +132,11 @@ final class FlowRunner
                 }
             }
 
-            // Note nodes are annotations — never executed.
-            if ($node->type === 'note') {
+            // Note nodes are annotations — never executed. Matched across every
+            // id the kind answers to: a graph saved with the canonical
+            // `@particle-academy/note` must stay an annotation, not become an
+            // unrunnable node.
+            if ($node->type !== null && KindId::matches($node->type, 'note')) {
                 $emit(RunEvent::nodeStatus($node->id, NodeStatus::IDLE, 'annotation'));
 
                 continue;
@@ -152,7 +156,7 @@ final class FlowRunner
             }
 
             try {
-                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit));
+                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth);
                 $result = $exec($ctx);
                 $this->publish($node, $result, $outputs, $portValues, $completed, $emit);
             } catch (Throwable $e) {

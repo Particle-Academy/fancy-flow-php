@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace FancyFlow\Laravel;
 
+use FancyFlow\Capabilities\Capabilities;
+use FancyFlow\Capabilities\LlmClient as RouteLlmClient;
+use FancyFlow\Capabilities\WorkflowResolver;
 use FancyFlow\ExecutorRegistry;
 use FancyFlow\Laravel\Clients\CacheStore;
 use FancyFlow\Laravel\Clients\LaravelHttpClient;
@@ -82,6 +85,14 @@ final class FancyFlowServiceProvider extends ServiceProvider
             return $registry;
         });
 
+        // `subflow` needs somewhere to look workflows up. With persistence on
+        // they already live in the workflows table, so the primitive works out
+        // of the box; rebind WorkflowResolver to point it elsewhere.
+        $this->app->bindIf(
+            WorkflowResolver::class,
+            fn (Container $app): WorkflowResolver => new EloquentWorkflowResolver($app->make(NodeKindRegistry::class)),
+        );
+
         $this->app->singleton(FancyFlowManager::class, fn (Container $app): FancyFlowManager => new FancyFlowManager(
             $app->make(NodeKindRegistry::class),
             $app->make(ExecutorRegistry::class),
@@ -93,6 +104,8 @@ final class FancyFlowServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->wireCapabilities();
+
         $migrations = dirname(__DIR__, 2).'/database/migrations';
 
         // Only create the tables when persistence is on; publishing is always
@@ -117,6 +130,32 @@ final class FancyFlowServiceProvider extends ServiceProvider
         }
 
         $this->discoverFlowNodes();
+    }
+
+    /**
+     * Hand the container's capability bindings to the framework-free core.
+     *
+     * The core can't reach into a container, so the bridge is explicit: an app
+     * that binds {@see RouteLlmClient} or {@see WorkflowResolver} gets it used
+     * by `llm_router` / `subflow`. Nothing bound means `llm_router` falls back
+     * to AUTO-DETECTING an installed adapter (Prism, laravel/ai) from the
+     * `fancy-flow.llm` config.
+     */
+    private function wireCapabilities(): void
+    {
+        $config = (array) ($this->app['config']['fancy-flow']['llm'] ?? []);
+        Capabilities::configureLlm(array_filter($config, static fn ($v) => $v !== null && $v !== ''));
+
+        // Proxies, not instances: resolving the real services here would build
+        // them before the app has finished configuring the container (and once
+        // dragged the NodeKindRegistry into existence too early).
+        if ($this->app->bound(RouteLlmClient::class)) {
+            Capabilities::setLlmClient(new ContainerLlmClient($this->app));
+        }
+
+        if ($this->app->bound(WorkflowResolver::class)) {
+            Capabilities::setWorkflowResolver(new ContainerWorkflowResolver($this->app));
+        }
     }
 
     /** @param array<string,mixed> $config */

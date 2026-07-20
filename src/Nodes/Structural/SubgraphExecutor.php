@@ -11,7 +11,6 @@ use FancyFlow\Nodes\Support\ExecutorDeps;
 use FancyFlow\Registry\Builtin;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\RunOptions;
-use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Workflow;
 
 /**
@@ -23,6 +22,8 @@ use FancyFlow\Workflow;
  */
 final class SubgraphExecutor implements NodeExecutor
 {
+    use SeedsEntryNodes;
+
     public function __construct(private readonly ExecutorDeps $deps) {}
 
     public function execute(ExecutionContext $ctx): mixed
@@ -39,32 +40,12 @@ final class SubgraphExecutor implements NodeExecutor
         $result = (new FlowRunner())->run(
             $import->graph,
             $executors,
-            options: new RunOptions(initialInputs: $this->seed($import->graph, $ctx->inputs)),
+            options: new RunOptions(
+                initialInputs: $this->seedEntryNodes($import->graph, $ctx->inputs),
+                depth: $ctx->depth + 1,
+            ),
         );
 
         return $result->outputs;
-    }
-
-    /**
-     * Seed every entry node (no incoming edge) with this node's inputs.
-     *
-     * @param array<string,mixed> $inputs
-     * @return array<string,array<string,mixed>>
-     */
-    private function seed(FlowGraph $graph, array $inputs): array
-    {
-        $hasIncoming = [];
-        foreach ($graph->edges as $edge) {
-            $hasIncoming[$edge->target] = true;
-        }
-
-        $seed = [];
-        foreach ($graph->nodes as $node) {
-            if (! isset($hasIncoming[$node->id])) {
-                $seed[$node->id] = $inputs;
-            }
-        }
-
-        return $seed;
     }
 }

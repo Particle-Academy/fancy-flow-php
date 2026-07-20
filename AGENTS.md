@@ -24,9 +24,19 @@ Node and PHP. Don't break it.
 - `ExecutorRegistry` + `Contracts\{NodeExecutor, Resolver}` — behavior; resolves
   node id → kind → `*`.
 - `Runtime\{ExecutionContext, RunEvent, RunOptions, RunResult, Port, ...}`.
-- `Nodes\<Domain>\*Executor` — the 22 default executors, grouped by domain.
+- `Nodes\<Domain>\*Executor` — the 24 default executors, grouped by domain.
 - `Nodes\Support\*` — injectable client interfaces + deterministic fakes + the
   `Expr` `{{ path }}` resolver (safe, no arbitrary eval).
+- `Capabilities\*` — the HOST capability seam: `LlmClient` (`chooseRoute`, used
+  by `llm_router`) and `WorkflowResolver` (used by `subflow`), plus the shipped
+  `Adapters\{PrismLlmClient, LaravelAiLlmClient}` and the auto-detector. Both
+  libraries are `suggest`-only + `class_exists()`-guarded — **core's `require`
+  must stay PHP-only**. `FakeLlmClient` keeps flow tests offline.
+- `Registry\KindId` — the id convention. Canonical ids are
+  `@particle-academy/<name>`; old spellings live on as `aliases`. **Anything
+  keyed by kind name must key on EVERY id a kind answers to** — registry lookups
+  and executor bindings both do, and a rename like `llm_branch` → `llm_router`
+  is only survivable because of it.
 
 ## Conventions
 
@@ -55,6 +65,8 @@ envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
-0.1 core (this) → 0.2 Laravel layer → 0.3 durable + agentic → 0.4 durable human
-input (`user_input` pause/resume) → 0.5 Human+ (Reverb broadcast + MCP bridge).
+0.1 core → 0.2 Laravel layer → 0.3 durable + agentic → 0.4 durable human
+input (`user_input` pause/resume) → 0.5 capabilities + namespaced kind ids
+(`llm_router`, `subflow`, shipped LLM adapters) → 0.6 Human+ (Reverb broadcast +
+MCP bridge).
 Plan: envelope `.ai/plans/fancy-flow-php.md`.

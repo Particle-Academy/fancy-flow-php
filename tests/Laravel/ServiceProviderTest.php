@@ -25,7 +25,7 @@ function node(string $id, string $kind, array $config = []): array
 
 it('resolves the manager and facade', function () {
     expect(app('fancy-flow'))->toBeInstanceOf(FancyFlowManager::class);
-    expect(FancyFlow::kinds()->all())->toHaveCount(25); // 22 built-ins + note + subgraph + agent
+    expect(FancyFlow::kinds()->all())->toHaveCount(27); // 24 built-ins + note + subgraph + agent
     expect(FancyFlow::kinds()->has('agent'))->toBeTrue();
 });
 

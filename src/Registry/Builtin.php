@@ -8,6 +8,7 @@ use FancyFlow\ExecutorRegistry;
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Nodes\Ai\EmbedSearchExecutor;
 use FancyFlow\Nodes\Ai\LlmCallExecutor;
+use FancyFlow\Nodes\Ai\LlmRouterExecutor;
 use FancyFlow\Nodes\Ai\ToolUseExecutor;
 use FancyFlow\Nodes\Data\DataStoreExecutor;
 use FancyFlow\Nodes\Data\MemoryStoreExecutor;
@@ -25,6 +26,7 @@ use FancyFlow\Nodes\Logic\TransformExecutor;
 use FancyFlow\Nodes\Logic\WaitExecutor;
 use FancyFlow\Nodes\Output\LogExecutor;
 use FancyFlow\Nodes\Output\OutputExecutor;
+use FancyFlow\Nodes\Structural\SubflowExecutor;
 use FancyFlow\Nodes\Structural\SubgraphExecutor;
 use FancyFlow\Nodes\Support\ExecutorDeps;
 use FancyFlow\Nodes\Trigger\ManualTriggerExecutor;
@@ -72,7 +74,10 @@ final class Builtin
     {
         $deps ??= new ExecutorDeps();
 
-        return (new ExecutorRegistry($resolver))->bindMany([
+        // Bound under CANONICAL ids. Lookup is alias-aware in both directions
+        // (see ExecutorRegistry::resolveFor), so a graph saved with bare `branch`
+        // still finds this, and a host binding under bare `branch` still wins.
+        $bindings = [
             // triggers
             'manual_trigger' => new ManualTriggerExecutor(),
             'webhook_trigger' => new WebhookTriggerExecutor(),
@@ -88,12 +93,14 @@ final class Builtin
             'merge' => new MergeExecutor(),
             'wait' => new WaitExecutor(),
             'transform' => new TransformExecutor(),
+            'subflow' => new SubflowExecutor($deps),
             // data
             'memory_store' => new MemoryStoreExecutor($deps->memory),
             'data_store' => new DataStoreExecutor($deps->data),
             'variable' => new VariableExecutor(),
             // ai
             'llm_call' => new LlmCallExecutor($deps->llm),
+            'llm_router' => new LlmRouterExecutor(),
             'tool_use' => new ToolUseExecutor($deps->tools),
             'embed_search' => new EmbedSearchExecutor($deps->vectors),
             // io
@@ -104,15 +111,81 @@ final class Builtin
             'log' => new LogExecutor(),
             // structural
             'subgraph' => new SubgraphExecutor($deps),
-        ]);
+        ];
+
+        // Bind each executor under EVERY id its kind answers to, not just the
+        // canonical one. Convention-derived variants (bare ↔ `@particle-academy/`)
+        // are not enough: `llm_router` was renamed from `llm_branch`, and no
+        // amount of prefix arithmetic gets you from one to the other — only the
+        // kind's declared alias list does. Mirrors the TS `kindIds()` rule that
+        // anything keyed by kind name must key on all of them.
+        $ids = self::kindIdIndex();
+
+        $expanded = [];
+        foreach ($bindings as $kind => $executor) {
+            foreach ($ids[$kind] ?? [KindId::canonical($kind)] as $id) {
+                $expanded[$id] = $executor;
+            }
+        }
+
+        return (new ExecutorRegistry($resolver))->bindMany($expanded);
     }
 
     /**
-     * The raw kind literals — a direct port of fancy-flow's `builtin.ts` KINDS.
+     * bare kind name → every id that kind answers to (canonical first).
+     *
+     * @return array<string, list<string>>
+     */
+    private static function kindIdIndex(): array
+    {
+        $index = [];
+        foreach ([...self::kinds(), ...self::structuralKinds(), self::agentKind()] as $raw) {
+            $name = (string) $raw['name'];
+            $index[KindId::bare($name)] = array_values(array_unique([$name, ...($raw['aliases'] ?? [])]));
+        }
+
+        return $index;
+    }
+
+    /**
+     * Give a built-in kind literal its CANONICAL namespaced id, keeping every
+     * previous spelling as an alias.
+     *
+     * The literals below are written with bare names because that reads better
+     * and there are 24 of them; namespacing is applied here so no kind can drift
+     * out of the convention by hand. Parity with fancy-flow 0.11.0, where each
+     * kind is `@particle-academy/<name>` with `aliases: ["<name>", "@fancy/<name>"]`.
+     *
+     * @param array<string,mixed> $raw
+     * @return array<string,mixed>
+     */
+    private static function canonicalize(array $raw): array
+    {
+        $bare = KindId::bare((string) $raw['name']);
+        $raw['name'] = KindId::NAMESPACE.$bare;
+        $raw['aliases'] = array_values(array_unique([
+            ...KindId::builtinAliases($bare),
+            ...(is_array($raw['aliases'] ?? null) ? $raw['aliases'] : []),
+        ]));
+
+        return $raw;
+    }
+
+    /**
+     * The raw kind literals — a direct port of fancy-flow's `builtin.ts` KINDS,
+     * returned with canonical namespaced ids (+ bare aliases).
      *
      * @return list<array<string,mixed>>
      */
     public static function kinds(): array
+    {
+        return array_map(self::canonicalize(...), self::kindLiterals());
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private static function kindLiterals(): array
     {
         $httpMethod = [
             'type' => 'select', 'key' => 'method', 'label' => 'Method', 'default' => 'GET', 'required' => true,
@@ -191,6 +264,30 @@ final class Builtin
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'source', 'label' => 'List', 'example' => '{{ $json.users }}', 'required' => true],
                     ['type' => 'number', 'key' => 'concurrency', 'label' => 'Concurrency', 'default' => 1, 'min' => 1, 'max' => 50],
+                ],
+            ],
+            [
+                'name' => 'subflow', 'category' => 'logic', 'label' => 'SubFlow',
+                'description' => 'Run another workflow and bring its result — or its live progress — back into this one.',
+                'icon' => '⧉',
+                'inputs' => [['id' => 'in']],
+                // The `stream` port only exists when something streams; see
+                // SubflowExecutor::ports() for the config-derived set.
+                'outputs' => [['id' => 'out', 'label' => 'result']],
+                'configSchema' => [
+                    ['type' => 'text', 'key' => 'workflow', 'label' => 'Workflow', 'required' => true,
+                        'placeholder' => 'onboarding-v2',
+                        'description' => "Reference resolved by the host's WorkflowResolver."],
+                    ['type' => 'select', 'key' => 'mode', 'label' => 'Return', 'default' => 'output', 'options' => [
+                        ['value' => 'output', 'label' => 'Output when it finishes'],
+                        ['value' => 'stream', 'label' => 'Stream progress as it runs'],
+                        ['value' => 'both', 'label' => 'Both — stream, then output'],
+                    ], 'description' => 'Streaming adds a second port so a parent can show progress instead of a spinner.'],
+                    ['type' => 'json', 'key' => 'inputs', 'label' => 'Input mapping',
+                        'description' => "Entry-point inputs for the child run. Omit to pass this node's inputs straight through."],
+                    ['type' => 'number', 'key' => 'maxDepth', 'label' => 'Max nesting depth',
+                        'default' => SubflowExecutor::DEFAULT_MAX_DEPTH, 'min' => 1, 'max' => 32,
+                        'description' => 'Guards against a workflow referencing itself.'],
                 ],
             ],
             [
@@ -274,6 +371,44 @@ final class Builtin
                     ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1, 'default' => 0.7],
                     ['type' => 'number', 'key' => 'max_tokens', 'label' => 'Max tokens', 'min' => 1, 'max' => 8192, 'default' => 1024],
                     ['type' => 'json', 'key' => 'tools', 'label' => 'Tools (JSON)', 'description' => 'Optional Anthropic-style tool definitions.'],
+                    ['type' => 'credential', 'key' => 'credential', 'label' => 'API credential', 'credentialType' => 'llm_credential'],
+                ],
+            ],
+            [
+                'name' => 'llm_router', 'category' => 'ai', 'label' => 'LLM Router',
+                // Renamed from `llm_branch`: the node picks one of N NAMED
+                // ROUTES, it is not a two-way branch, and the id now matches the
+                // label and the `routes[]` config. Every previously-shipped id
+                // stays an alias, so graphs and documents already carrying
+                // `llm_branch` keep resolving. Config keys are unchanged.
+                'aliases' => ['llm_branch', '@fancy/llm_branch'],
+                'description' => 'Let a model choose which route the flow takes.', 'icon' => '✧',
+                'inputs' => [['id' => 'in']],
+                // Each declared route is a port; the executor returns
+                // Port::only($id) to pick one. The static ports here are the
+                // DEFAULT-config shape — real ports come from the node's own
+                // `routes` via LlmRouterExecutor::ports(), the twin of the TS
+                // kind's `outputs: (config) => routePorts(...)`.
+                'outputs' => [['id' => 'a', 'label' => 'a'], ['id' => 'b', 'label' => 'b'], ['id' => 'fallback', 'label' => 'fallback']],
+                'configSchema' => [
+                    ['type' => 'textarea', 'key' => 'system', 'label' => 'System prompt', 'rows' => 3,
+                        'description' => 'Optional framing for the routing decision.'],
+                    ['type' => 'expression', 'key' => 'prompt', 'label' => 'What to route on', 'required' => true,
+                        'example' => '{{ $json.message }}'],
+                    ['type' => 'json', 'key' => 'routes', 'label' => 'Routes',
+                        'description' => 'The model picks exactly one. Descriptions are what it chooses between — make them distinct.',
+                        'default' => [
+                            ['port' => 'a', 'description' => 'Describe when the model should pick this route.'],
+                            ['port' => 'b', 'description' => 'Describe when the model should pick this route.'],
+                        ]],
+                    ['type' => 'select', 'key' => 'provider', 'label' => 'Provider', 'default' => 'anthropic', 'options' => [
+                        ['value' => 'anthropic', 'label' => 'Anthropic'],
+                        ['value' => 'openai', 'label' => 'OpenAI'],
+                        ['value' => 'custom', 'label' => 'Custom'],
+                    ]],
+                    ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'placeholder' => 'claude-sonnet-4-5'],
+                    ['type' => 'switch', 'key' => 'fallback', 'label' => 'Add a `fallback` port', 'default' => true,
+                        'description' => 'Where the flow goes if the model returns no usable route.'],
                     ['type' => 'credential', 'key' => 'credential', 'label' => 'API credential', 'credentialType' => 'llm_credential'],
                 ],
             ],
@@ -370,6 +505,12 @@ final class Builtin
      */
     public static function structuralKinds(): array
     {
+        return array_map(self::canonicalize(...), self::structuralKindLiterals());
+    }
+
+    /** @return list<array<string,mixed>> */
+    private static function structuralKindLiterals(): array
+    {
         return [
             [
                 'name' => 'note', 'category' => 'custom', 'label' => 'Note',
@@ -396,7 +537,7 @@ final class Builtin
      */
     public static function agentKind(): array
     {
-        return [
+        return self::canonicalize([
             'name' => 'agent', 'category' => 'ai', 'label' => 'Agent', 'icon' => '✦',
             'description' => 'LLM agent with tools + multi-step reasoning.',
             'configSchema' => [
@@ -407,6 +548,6 @@ final class Builtin
                 ['type' => 'number', 'key' => 'max_steps', 'label' => 'Max steps', 'default' => 3, 'min' => 1, 'max' => 20],
                 ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1, 'default' => 0.7],
             ],
-        ];
+        ]);
     }
 }

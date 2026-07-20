@@ -66,7 +66,7 @@ Ported faithfully from `fancy-flow@0.5.3` — this is a port, not a redesign:
 - **Events** — `run-start`, `node-status`, `node-output`, `log`, `run-end`,
   `run-error`, streamed to your `onEvent` sink.
 
-## The built-in library — 22 kinds across 7 domains
+## The built-in library — 24 kinds across 7 domains
 
 `Builtin::register()` installs the full library (`Builtin::executors()` binds a
 default executor for each):
@@ -75,14 +75,40 @@ default executor for each):
 |---|---|
 | `trigger` | `manual_trigger`, `webhook_trigger`, `schedule_trigger` |
 | `human` | `user_input`, `human_approval`, `notify` |
-| `logic` | `branch`, `switch_case`, `for_each`, `merge`, `wait`, `transform` |
+| `logic` | `branch`, `switch_case`, `for_each`, `merge`, `wait`, `transform`, `subflow` |
 | `data` | `memory_store`, `data_store`, `variable` |
-| `ai` | `llm_call`, `tool_use`, `embed_search` |
+| `ai` | `llm_call`, `llm_router`, `tool_use`, `embed_search` |
 | `io` | `api_request`, `webhook_out` |
 | `output` | `output`, `log` |
 
 Plus the structural `note` (never executed) and `subgraph` (runs a nested flow),
 available via `Builtin::register($registry, withStructural: true)`.
+
+### Kind ids are namespaced
+
+A kind's `name` is its **canonical** id and is what gets written into saved
+documents — so a bare name two packages could both claim is unfixable after the
+fact. Built-ins are published as `@particle-academy/<name>`, with every previous
+spelling kept as an **alias**:
+
+```php
+$registry->get('branch')->name;                  // "@particle-academy/branch"
+$registry->get('@fancy/branch')->name;           // same kind — aliases resolve
+$registry->get('llm_branch')->name;              // "@particle-academy/llm_router"
+```
+
+Lookups resolve aliases in both directions, and executors bind under **every** id
+a kind answers to — a graph saved with the bare name keeps running, and a host
+that bound its executor under the bare name keeps winning. Publish your own kinds
+namespaced and list old names in `aliases`:
+
+```php
+NodeKind::fromArray([
+    'name' => '@acme/salesforce_upsert',
+    'aliases' => ['sf_upsert_v1'],   // graphs saved before the rename still open
+    'category' => 'io', 'label' => 'Upsert',
+]);
+```
 
 On the TS side these kinds ship **without** executors — each host wires where
 memory, HTTP, and AI actually go. The PHP twin ships **default** executors so a
@@ -103,6 +129,94 @@ $executors = Builtin::executors(new ExecutorDeps(
 Omit `ExecutorDeps` and you get deterministic echo/in-memory fakes — ideal for
 tests and local runs. (The 0.2 Laravel layer binds these to the HTTP client,
 `laravel/ai`, cache/Eloquent, and Notifications.)
+
+## Capabilities — `llm_router` and `subflow`
+
+Two built-ins need something core must never depend on: a model, and somewhere
+workflows live. A node that imported a provider SDK would force every consumer to
+install it, so core declares the **contract** and the host supplies the
+implementation.
+
+### `llm_router` — a shuttle, not an engine
+
+It carries the declared routes out to an LLM client and carries the choice back.
+No provider SDK, no prompt engineering, no response parsing, no retry policy —
+all of that belongs to the client. What it *does* own is graph integrity: **a
+port the model invents never routes.** An unrecognised choice goes to the
+`fallback` port (or the first declared route when that switch is off) and always
+logs a warning — because emitting on a port with no edge silently ends the branch
+and the run then reports success having done nothing.
+
+**It ships working.** Adapters for `prism-php/prism` and `laravel/ai` are
+included and auto-detected — install either one and the node just works:
+
+```bash
+composer require prism-php/prism   # or: composer require laravel/ai
+```
+
+Both are `suggest`-only and `class_exists()`-guarded; this package's `require`
+stays PHP-only. Both constrain the model to the declared ports via structured
+output (Prism's `EnumSchema`, laravel/ai's JSON-schema enum) rather than parsing a
+port name out of prose. Install **both** and fancy-flow will not choose for you —
+set `fancy-flow.llm.driver` to `prism` or `laravel-ai`. Install **neither** and
+the node aborts naming exactly what to install or register; it never guesses.
+
+Hand-rolled stays first-class — registering your own replaces the auto-detected
+one:
+
+```php
+use FancyFlow\Capabilities\{Capabilities, LlmClient, LlmRouteRequest, LlmRouteChoice};
+
+final class MyRouter implements LlmClient
+{
+    public function chooseRoute(LlmRouteRequest $request): LlmRouteChoice
+    {
+        // $request->prompt, $request->routes, $request->ports(), …
+        return new LlmRouteChoice(port: 'billing', reason: 'duplicate charge');
+    }
+}
+
+Capabilities::setLlmClient(new MyRouter());   // or bind LlmClient in the container
+```
+
+The chosen route travels **with** the value — `{route, reason, input}` down the
+chosen port — so a completed run explains itself without replaying the model call.
+Testing a flow needs no API key and no network: `FakeLlmClient::always('billing')`.
+
+> The kind was renamed `llm_branch` → `llm_router` (it picks one of N named
+> routes; it is not a two-way branch). Config keys are unchanged, and
+> `llm_branch` / `@fancy/llm_branch` remain aliases, so existing graphs keep
+> running.
+
+### `subflow` — run another workflow
+
+Runs a child graph through this same engine, so all it needs from the host is
+where workflows live. Three modes: `output` (result on `out`), `stream` (live
+progress), `both`. Child progress is surfaced on the **parent's** feed as tagged
+log lines attributed to the subflow node — a child's node ids mean nothing in the
+parent graph, so its events are never re-emitted raw. A depth guard (default 8)
+names the offending reference instead of overflowing the stack.
+
+Under Laravel with persistence enabled, subflow references resolve against the
+stored workflows table out of the box (by `name`, highest `version`, or numeric
+id). Point it elsewhere by binding your own:
+
+```php
+use FancyFlow\Capabilities\{Capabilities, WorkflowResolver};
+
+final class FileResolver implements WorkflowResolver
+{
+    public function resolve(string $ref): ?FlowGraph
+    {
+        return Workflow::import(json_decode(file_get_contents("flows/{$ref}.json"), true))->graph;
+    }
+}
+
+Capabilities::setWorkflowResolver(new FileResolver());
+```
+
+`Capabilities::status()` answers "what does this graph need that I haven't
+wired?" before a run fails halfway through.
 
 ## Custom nodes
 
@@ -219,7 +333,7 @@ composer test
 
 ## Roadmap
 
-- **0.1 — core parity** ✅ — schema, engine, registries, the 22 built-in kinds +
+- **0.1 — core parity** ✅ — schema, engine, registries, the built-in kinds +
   default executors, custom nodes, Pest + parity fixtures.
 - **0.2 — Laravel layer** ✅ — service provider + facade, container executors +
   `#[FlowNode]` discovery, `config/fancy-flow.php`, Artisan, RunEvent → Laravel events.
@@ -230,7 +344,11 @@ composer test
   (`awaiting_input`) and resumes with a typed values payload
   (`submitInput()` + the `submissions` column), with `awaitingForm()` exposing
   the paused node's form for a host UI to render.
-- **0.5 — Human+** *(next)* — broadcast run status over Reverb so `<FlowEditor>`
+- **0.5 — capabilities + namespaced ids** ✅ — the `LlmClient` / `WorkflowResolver`
+  capability seam with shipped, auto-detected Prism + laravel/ai adapters,
+  the `llm_router` and `subflow` built-ins, and canonical `@particle-academy/<name>`
+  kind ids with aliases (parity with fancy-flow 0.12.0).
+- **0.6 — Human+** *(next)* — broadcast run status over Reverb so `<FlowEditor>`
   shows a server run live; MCP bridge so an agent can trigger + watch server runs.
 
 ## License

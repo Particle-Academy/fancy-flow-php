@@ -44,6 +44,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | LLM (the `llm_router` capability)
+    |--------------------------------------------------------------------------
+    | `llm_router` is a shuttle, not an engine: it carries the declared routes
+    | out to an LLM client and carries the choice back. fancy-flow ships working
+    | adapters for prism-php/prism and laravel/ai, and AUTO-DETECTS whichever
+    | you have installed — no glue required.
+    |
+    | `driver`   only needed when BOTH libraries are installed (fancy-flow will
+    |            not choose for you): "prism" or "laravel-ai".
+    | `provider` / `model` defaults for nodes that don't set their own.
+    |
+    | Using something else? Implement FancyFlow\Capabilities\LlmClient and bind
+    | it in the container — an explicit binding always wins over auto-detection.
+    */
+    'llm' => [
+        'driver' => env('FANCY_FLOW_LLM_DRIVER'),
+        'provider' => env('FANCY_FLOW_LLM_PROVIDER'),
+        'model' => env('FANCY_FLOW_LLM_MODEL'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Runs
     |--------------------------------------------------------------------------
     */

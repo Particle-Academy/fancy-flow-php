@@ -32,3 +32,35 @@ jobs:
 
       - name: Run tests
         run: vendor/bin/pest --colors=always
+
+  # laravel/ai requires PHP 8.3+, but this package's floor is 8.2 — so it cannot
+  # sit in require-dev without breaking the 8.2 job above. It gets its own job
+  # instead, so the shipped adapter is exercised against the real SDK rather
+  # than only skipped. (prism-php/prism supports 8.2 and IS in require-dev.)
+  laravel-ai:
+    runs-on: ubuntu-latest
+    name: laravel/ai adapter (PHP 8.4)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+          extensions: mbstring
+
+      - name: Install dependencies + laravel/ai
+        run: |
+          composer update --prefer-dist --no-interaction --no-progress
+          composer require --dev laravel/ai --prefer-dist --no-interaction --no-progress
+
+      - name: Fail if the laravel/ai adapter tests would be skipped
+        run: |
+          php -r 'require "vendor/autoload.php";
+            exit(FancyFlow\Capabilities\Adapters\LaravelAiLlmClient::isAvailable() ? 0 : 1);' \
+            || { echo "::error::laravel/ai installed but the adapter cannot detect it"; exit 1; }
+
+      - name: Run tests
+        run: vendor/bin/pest --colors=always

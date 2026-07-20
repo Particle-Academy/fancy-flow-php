@@ -26,6 +26,9 @@ final class FlowNode
      * @param list<array<string,mixed>> $configSchema
      * @param list<array<string,mixed>>|null $inputs
      * @param list<array<string,mixed>>|null $outputs
+     * @param list<string> $aliases previous ids this kind still answers to. `name` is
+     *        CANONICAL and is what lands in saved graphs, so publish namespaced
+     *        (`@acme/salesforce_upsert`) and keep the old bare name here.
      */
     public function __construct(
         public readonly string $name,
@@ -36,7 +39,18 @@ final class FlowNode
         public readonly array $configSchema = [],
         public readonly ?array $inputs = null,
         public readonly ?array $outputs = null,
+        public readonly array $aliases = [],
     ) {}
+
+    /**
+     * Every id this kind answers to — canonical first.
+     *
+     * @return list<string>
+     */
+    public function ids(): array
+    {
+        return array_values(array_unique([$this->name, ...$this->aliases]));
+    }
 
     /** The kind definition array this attribute describes (feeds NodeKind::fromArray). */
     public function toKindArray(): array
@@ -60,6 +74,9 @@ final class FlowNode
         }
         if ($this->outputs !== null) {
             $kind['outputs'] = $this->outputs;
+        }
+        if ($this->aliases !== []) {
+            $kind['aliases'] = $this->aliases;
         }
 
         return $kind;

@@ -18,11 +18,15 @@ final class RunOptions
      *                                                             keyed by node id. Such a node is NOT re-executed — its
      *                                                             stored output is republished on its ports, reproducing
      *                                                             the same routing. The primitive durable resume builds on.
+     * @param int                                   $depth         Nesting depth — `subflow` passes depth + 1 to the child
+     *                                                             graph it runs, so runaway recursion can be reported BY
+     *                                                             NAME instead of overflowing the stack.
      */
     public function __construct(
         public readonly ?int $timeoutMs = null,
         public readonly ?AbortSignal $signal = null,
         public readonly array $initialInputs = [],
         public readonly array $resumeOutputs = [],
+        public readonly int $depth = 0,
     ) {}
 }

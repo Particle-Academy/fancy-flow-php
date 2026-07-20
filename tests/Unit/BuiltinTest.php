@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Registry\Builtin;
+use FancyFlow\Registry\KindId;
 
-it('registers all 22 built-in kinds', function () {
+it('registers all 24 built-in kinds', function () {
     $r = Builtin::register(new NodeKindRegistry());
 
-    expect($r->all())->toHaveCount(22);
+    expect($r->all())->toHaveCount(24);
 });
 
 it('covers the expected 7 domains with the right counts', function () {
@@ -20,11 +21,11 @@ it('covers the expected 7 domains with the right counts', function () {
     ksort($counts);
 
     expect($counts)->toBe([
-        'ai' => 3,
+        'ai' => 4,
         'data' => 3,
         'human' => 3,
         'io' => 2,
-        'logic' => 6,
+        'logic' => 7,
         'output' => 2,
         'trigger' => 3,
     ]);
@@ -35,9 +36,9 @@ it('registers every named kind from the fancy-flow library', function () {
     $expected = [
         'manual_trigger', 'webhook_trigger', 'schedule_trigger',
         'user_input', 'human_approval', 'notify',
-        'branch', 'switch_case', 'for_each', 'merge', 'wait', 'transform',
+        'branch', 'switch_case', 'for_each', 'merge', 'wait', 'transform', 'subflow',
         'memory_store', 'data_store', 'variable',
-        'llm_call', 'tool_use', 'embed_search',
+        'llm_call', 'llm_router', 'llm_branch', 'tool_use', 'embed_search',
         'api_request', 'webhook_out',
         'output', 'log',
     ];
@@ -55,7 +56,7 @@ it('adds structural kinds only when asked', function () {
     $withStructural = Builtin::register(new NodeKindRegistry(), withStructural: true);
     expect($withStructural->has('subgraph'))->toBeTrue();
     expect($withStructural->has('note'))->toBeTrue();
-    expect($withStructural->all())->toHaveCount(24);
+    expect($withStructural->all())->toHaveCount(26);
 });
 
 it('binds a default executor for every registered kind', function () {
@@ -63,7 +64,7 @@ it('binds a default executor for every registered kind', function () {
     $executors = Builtin::executors();
 
     foreach ($registry->all() as $kind) {
-        if ($kind->name === 'note') {
+        if (KindId::matches($kind->name, 'note')) {
             continue; // note is never executed
         }
         expect($executors->hasKind($kind->name))->toBeTrue("executor for {$kind->name}");

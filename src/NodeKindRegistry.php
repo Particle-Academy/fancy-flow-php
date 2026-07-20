@@ -18,8 +18,11 @@ use FancyFlow\Registry\NodeKind;
  */
 final class NodeKindRegistry
 {
-    /** @var array<string, NodeKind> */
+    /** @var array<string, NodeKind> keyed by CANONICAL id. */
     private array $kinds = [];
+
+    /** @var array<string, string> alias → canonical id. See {@see resolveKindId()}. */
+    private array $aliases = [];
 
     private static ?self $default = null;
 
@@ -39,23 +42,65 @@ final class NodeKindRegistry
     public function register(NodeKind $kind): static
     {
         $this->kinds[$kind->name] = $kind;
+        foreach ($kind->aliases as $alias) {
+            $this->aliases[$alias] = $kind->name;
+        }
 
         return $this;
     }
 
+    /** Remove a kind by any of its ids, along with every alias pointing at it. */
     public function unregister(string $name): void
     {
-        unset($this->kinds[$name]);
+        $canonical = $this->resolveKindId($name) ?? $name;
+        unset($this->kinds[$canonical]);
+        foreach ($this->aliases as $alias => $target) {
+            if ($target === $canonical) {
+                unset($this->aliases[$alias]);
+            }
+        }
     }
 
+    /**
+     * Resolve any id — canonical or alias — to the canonical one, or null.
+     *
+     * The PHP twin of fancy-flow's `resolveKindId`. `kind` is persisted inside
+     * every saved graph, so documents written before namespacing must keep
+     * resolving; that is exactly what aliases are for.
+     */
+    public function resolveKindId(string $id): ?string
+    {
+        if (isset($this->kinds[$id])) {
+            return $id;
+        }
+
+        $canonical = $this->aliases[$id] ?? null;
+
+        return $canonical !== null && isset($this->kinds[$canonical]) ? $canonical : null;
+    }
+
+    /** Get a kind by canonical id or alias, or null. */
     public function get(string $name): ?NodeKind
     {
-        return $this->kinds[$name] ?? null;
+        $canonical = $this->resolveKindId($name);
+
+        return $canonical === null ? null : $this->kinds[$canonical];
     }
 
     public function has(string $name): bool
     {
-        return isset($this->kinds[$name]);
+        return $this->resolveKindId($name) !== null;
+    }
+
+    /**
+     * Every id the kind registered under `$name` answers to — canonical first,
+     * then its aliases. Empty when nothing is registered under that id.
+     *
+     * @return list<string>
+     */
+    public function idsFor(string $name): array
+    {
+        return $this->get($name)?->ids() ?? [];
     }
 
     /**
