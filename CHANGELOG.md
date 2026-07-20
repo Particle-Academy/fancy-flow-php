@@ -8,6 +8,62 @@ upgrading.
 
 ---
 
+## 0.8.0
+
+Mirrors fancy-flow 0.16.0. All of it comes from the MOIC Suite consumer's review
+— the only consumer actually running the split (TS editor, PHP execution).
+
+### BREAKING — `WorkflowResolver` takes a version
+
+```php
+public function resolve(string $ref, ?int $version = null): FlowGraph|WorkflowResolutionFailure|null;
+```
+
+A workflow another workflow depends on is an **interface, and interfaces need
+pins**. Without one, a parent goes on calling `invoice-triage`, someone edits
+that child, and the parent runs different logic *having reported success the
+whole time* — correct-looking, no error, wrong behaviour. Before this **no host
+could implement pinning**, because the node had no way to ask and the resolver
+no way to receive.
+
+`missing` and `version-mismatch` are distinct on purpose: reporting a mismatch
+as "not found" sends an author hunting for a workflow that is sitting right
+there, and a mismatch error should name both versions.
+
+**What to do:** callers are unaffected. If you IMPLEMENT `WorkflowResolver`, add
+the optional parameter and widen the return type. Done now because the
+population of implementers is approximately one; later it would not have been.
+
+`EloquentWorkflowResolver` honours a pin, and reports a pinned-but-absent
+version as a mismatch naming the version it does hold.
+
+### BREAKING — manifest shape
+
+- The engine range moved **into each runtime**: one range could not say "needs
+  ts >=0.16 **and** php >=0.8", so a package installed cleanly against a host
+  whose *other* runtime was too old. A leftover top-level `fancyFlow` is now an
+  explicit error rather than ignored.
+- `capabilities` is a map with a requirement level (`{"llm": "required"}`), not
+  a bare list. `required` + unwired is an **error**, surfaced at author time so
+  an editor can grey the node instead of it silently no-opping mid-run.
+
+### Added
+
+- `subflow` takes an optional `version` pin.
+- Manifest `aliases`, `configVersion`, `sideEffects`, `pausesForHuman`.
+- `NodeManifest::satisfiesRange()` — a small semver check pinned clause-for-clause
+  against the TS implementation. An unparseable range is treated as unsatisfied,
+  so it fails loudly rather than waving a node through.
+- **Fixtures:** capability stubs declared as data (both engines build the same
+  fake from the same JSON — otherwise parity theatre), pause/resume cases,
+  event assertions, legacy-alias cases, and **at least one failure or pause case
+  is now required to publish**.
+
+Verified across runtimes rather than asserted: one fixture file through both
+engines returns identical verdicts, including which cases failed.
+
+---
+
 ## 0.7.0
 
 ### Added - the human-pause contract (`FancyFlow\Runtime\Pause`)

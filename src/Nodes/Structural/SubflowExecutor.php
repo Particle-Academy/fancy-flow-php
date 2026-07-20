@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FancyFlow\Nodes\Structural;
 
 use FancyFlow\Capabilities\Capabilities;
+use FancyFlow\Capabilities\WorkflowResolutionFailure;
 use FancyFlow\Capabilities\WorkflowResolver;
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Engine\FlowRunner;
@@ -113,7 +114,30 @@ final class SubflowExecutor implements NodeExecutor
             ));
         }
 
-        $child = $resolver->resolve($ref);
+        // An optional pin. A workflow another workflow depends on is an
+        // interface: without a pin, someone edits the child and this flow
+        // silently runs different logic while still reporting success.
+        $pin = $config['version'] ?? null;
+        if ($pin !== null && $pin !== '' && ! is_int($pin) && ! ctype_digit((string) $pin)) {
+            $ctx->abort(sprintf('subflow "%s" has a non-integer version pin (%s).', $ref, (string) $pin));
+        }
+        $version = ($pin === null || $pin === '') ? null : (int) $pin;
+
+        $child = $resolver->resolve($ref, $version);
+
+        if ($child instanceof WorkflowResolutionFailure) {
+            // A mismatch names BOTH versions. Reporting it as "not found" would
+            // send an author looking for a workflow that is sitting right there.
+            $ctx->abort($child->message ?? ($child->isVersionMismatch()
+                ? sprintf(
+                    'subflow "%s" is pinned to version %s, but the host has %s.',
+                    $ref,
+                    (string) $version,
+                    $child->available === null ? 'a different version' : (string) $child->available,
+                )
+                : "subflow could not resolve workflow \"{$ref}\""));
+        }
+
         if ($child === null) {
             $ctx->abort("subflow could not resolve workflow \"{$ref}\"");
         }

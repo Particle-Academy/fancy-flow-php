@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FancyFlow\Marketplace;
 
+use FancyFlow\Capabilities\Capabilities;
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Engine\FlowRunner;
 use FancyFlow\ExecutorRegistry;
@@ -70,8 +71,12 @@ final class FixtureRunner
      * @param  array<string,mixed>  $case
      * @return list<string>
      */
-    private function runCase(string $kind, array $case, NodeExecutor|callable $executor): array
+    private function runCase(string $canonicalKind, array $case, NodeExecutor|callable $executor): array
     {
+        // A case may run against an ALIAS or an older id, which is what proves
+        // the package's `aliases` declaration is real rather than decorative.
+        $kind = is_string($case['legacyKind'] ?? null) ? $case['legacyKind'] : $canonicalKind;
+
         $registry = Builtin::register(new NodeKindRegistry(), withStructural: true);
         $nodeKind = $registry->get($kind);
 
@@ -133,10 +138,207 @@ final class FixtureRunner
             );
         }
 
-        $result = (new FlowRunner())->run(new FlowGraph($nodes, $edges), $executors);
-        $expect = is_array($case['expect'] ?? null) ? $case['expect'] : [];
+        $events = [];
+        $release = $this->installStubs($case['stubs'] ?? null);
+        $result = (new FlowRunner())->run(
+            new FlowGraph($nodes, $edges),
+            $executors,
+            static function ($event) use (&$events): void {
+                $events[] = $event;
+            },
+        );
+        $release();
 
-        return $this->assert($expect, $result->ok, $result->error, $fired, $carried);
+        $expect = is_array($case['expect'] ?? null) ? $case['expect'] : [];
+        $problems = $this->assert($expect, $result->ok, $result->error, $fired, $carried);
+
+        // Emitted events are BEHAVIOUR, not decoration — an operator relies on
+        // the hallucinated-port warning to know a run took the fallback.
+        foreach ($expect['events'] ?? [] as $want) {
+            if (! $this->matchesAnyEvent($events, is_array($want) ? $want : [])) {
+                $problems[] = 'expected an emitted event matching '.json_encode($want).
+                    ', but none of the '.count($events).' emitted events did';
+            }
+        }
+
+        // Resume: the only path crossing a persistence boundary, and so the one
+        // most likely to drift between runtimes.
+        if (is_array($expect['afterResume'] ?? null)) {
+            $pause = Pause::decode($result->error);
+
+            if ($pause === null) {
+                $problems[] = 'expected the run to pause before resuming, but it never paused';
+            } else {
+                foreach ($this->resume($kind, $case, $executor, $ports, $expect['afterResume']) as $p) {
+                    $problems[] = $p;
+                }
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * Re-run a paused case with a submission delivered, as a durable host would.
+     *
+     * The submission arrives on `values` because that is the input the builtin
+     * human nodes read; a third-party pausing node wanting fixture coverage
+     * should follow the same convention rather than inventing its own.
+     *
+     * @param  array<string,mixed>  $case
+     * @param  list<string>  $ports
+     * @param  array<string,mixed>  $want
+     * @return list<string>
+     */
+    private function resume(
+        string $kind,
+        array $case,
+        NodeExecutor|callable $executor,
+        array $ports,
+        array $want,
+    ): array {
+        $config = $case['config'] ?? [];
+
+        $nodes = [
+            new FlowNode(id: 'trigger', type: 'manual_trigger'),
+            new FlowNode(id: self::SUBJECT, type: $kind, config: is_array($config) ? $config : []),
+        ];
+        $edges = [new FlowEdge(id: 'e:trigger', source: 'trigger', target: self::SUBJECT)];
+
+        foreach ($ports as $port) {
+            $nodes[] = new FlowNode(id: self::PROBE.$port, type: 'transform');
+            $edges[] = new FlowEdge(id: 'e:'.$port, source: self::SUBJECT, target: self::PROBE.$port, sourceHandle: $port);
+        }
+
+        $fired = [];
+        $carried = null;
+        $submit = $want['submit'] ?? null;
+
+        $executors = new ExecutorRegistry();
+        $executors->bind('manual_trigger', static fn () => $case['inputs'] ?? []);
+
+        // The resumed node sees its submission, exactly as the durable runner
+        // injects one.
+        $executors->bindNode(self::SUBJECT, static function (ExecutionContext $ctx) use ($executor, $submit) {
+            $withValues = new ExecutionContext(
+                node: $ctx->node,
+                inputs: array_merge($ctx->inputs, ['values' => $submit]),
+                emit: static function ($e) use ($ctx): void {
+                    $ctx->emit($e);
+                },
+                depth: $ctx->depth,
+            );
+
+            return $executor instanceof NodeExecutor
+                ? $executor->execute($withValues)
+                : $executor($withValues);
+        });
+
+        foreach ($ports as $port) {
+            $executors->bindNode(
+                self::PROBE.$port,
+                static function (ExecutionContext $ctx) use ($port, &$fired, &$carried) {
+                    $fired[] = $port;
+                    $carried = $ctx->input('in', $ctx->inputs);
+
+                    return null;
+                },
+            );
+        }
+
+        $release = $this->installStubs($case['stubs'] ?? null);
+        $result = (new FlowRunner())->run(new FlowGraph($nodes, $edges), $executors);
+        $release();
+
+        $problems = [];
+
+        if (isset($want['error'])) {
+            if ($result->ok || ! str_contains((string) $result->error, (string) $want['error'])) {
+                $problems[] = 'after resume: expected an error containing "'.$want['error'].'", got '.
+                    ($result->ok ? 'success' : '"'.(string) $result->error.'"');
+            }
+        }
+
+        if (isset($want['ports'])) {
+            $got = $fired;
+            $wanted = $want['ports'];
+            sort($got);
+            sort($wanted);
+
+            if ($got !== $wanted) {
+                $problems[] = 'after resume: expected ports ['.implode(', ', $wanted).
+                    '] to reach a downstream node, but ['.implode(', ', $got).'] did';
+            }
+        }
+
+        if (array_key_exists('value', $want) && $want['value'] !== $carried) {
+            $problems[] = 'after resume: expected the value carried downstream to be '.json_encode($want['value']).
+                ', got '.json_encode($carried);
+        }
+
+        return $problems;
+    }
+
+    /**
+     * Install the case's capability stubs, returning a callable that removes them.
+     *
+     * Constructed HERE from the fixture's JSON rather than supplied by the
+     * caller, which is the whole point: both runtimes build the same stub from
+     * the same data, so a fixture covering `llm_router` compares like with like
+     * instead of comparing two different fakes. Without that, the fixtures are
+     * parity theatre.
+     */
+    private function installStubs(mixed $stubs): callable
+    {
+        if (! is_array($stubs)) {
+            return static fn () => null;
+        }
+
+        $teardown = [];
+        $llm = $stubs['llm_client'] ?? null;
+
+        if (is_array($llm) && is_array($llm['chooseRoute'] ?? null)) {
+            $answer = $llm['chooseRoute'];
+            $teardown[] = Capabilities::setLlmClient(new FixtureLlmClient(
+                (string) ($answer['port'] ?? ''),
+                isset($answer['reason']) ? (string) $answer['reason'] : null,
+            ));
+        }
+
+        return static function () use ($teardown): void {
+            foreach ($teardown as $release) {
+                $release();
+            }
+        };
+    }
+
+    /**
+     * @param  list<mixed>  $events
+     * @param  array<string,mixed>  $want
+     */
+    private function matchesAnyEvent(array $events, array $want): bool
+    {
+        foreach ($events as $event) {
+            $data = is_object($event) ? get_object_vars($event) : (array) $event;
+
+            if (($data['type'] ?? null) !== ($want['type'] ?? null)) {
+                continue;
+            }
+            if (isset($want['nodeId']) && ($data['nodeId'] ?? null) !== $want['nodeId']) {
+                continue;
+            }
+            if (isset($want['level']) && ($data['level'] ?? null) !== $want['level']) {
+                continue;
+            }
+            if (isset($want['messageContains'])
+                && ! str_contains((string) ($data['message'] ?? ''), (string) $want['messageContains'])) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -228,6 +430,26 @@ final class FixtureRunner
             $problems[] = '`cases` must contain at least one case — an empty fixture file proves nothing.';
 
             return $problems;
+        }
+
+        // At least one case must exercise a failure.
+        //
+        // "Does it fail the same way" deserves equal weight to "does it succeed
+        // the same way": the incident behind this whole mechanism was a FAILURE
+        // that reported `completed` with no error. A suite covering only happy
+        // paths cannot catch a runtime that fails differently, or not at all.
+        $coversFailure = false;
+        foreach ($cases as $case) {
+            $expect = is_array($case) && is_array($case['expect'] ?? null) ? $case['expect'] : [];
+            if (array_key_exists('error', $expect) || array_key_exists('pause', $expect)) {
+                $coversFailure = true;
+                break;
+            }
+        }
+        if (! $coversFailure) {
+            $problems[] = 'At least one case must assert a failure (`expect.error`) or a pause (`expect.pause`). '
+                .'Every case here covers a success path, and the divergence this format exists to catch reported '
+                .'success while doing nothing.';
         }
 
         foreach (array_values($cases) as $i => $case) {

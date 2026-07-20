@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FancyFlow\Laravel;
 
+use FancyFlow\Capabilities\WorkflowResolutionFailure;
 use FancyFlow\Capabilities\WorkflowResolver;
 use FancyFlow\Schema\FlowGraph;
 use Illuminate\Contracts\Container\Container;
@@ -18,8 +19,8 @@ final class ContainerWorkflowResolver implements WorkflowResolver
 {
     public function __construct(private readonly Container $container) {}
 
-    public function resolve(string $ref): ?FlowGraph
+    public function resolve(string $ref, ?int $version = null): FlowGraph|WorkflowResolutionFailure|null
     {
-        return $this->container->make(WorkflowResolver::class)->resolve($ref);
+        return $this->container->make(WorkflowResolver::class)->resolve($ref, $version);
     }
 }

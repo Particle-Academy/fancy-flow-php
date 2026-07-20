@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use FancyFlow\Capabilities\Capabilities;
+use FancyFlow\Capabilities\WorkflowResolutionFailure;
 use FancyFlow\Capabilities\WorkflowResolver;
 use FancyFlow\Exceptions\RunAborted;
 use FancyFlow\Nodes\Structural\SubflowExecutor;
@@ -20,7 +21,7 @@ function mapResolver(array $graphs): WorkflowResolver
     {
         public function __construct(private array $graphs) {}
 
-        public function resolve(string $ref): ?FlowGraph
+        public function resolve(string $ref, ?int $version = null): FlowGraph|WorkflowResolutionFailure|null
         {
             return $this->graphs[$ref] ?? null;
         }

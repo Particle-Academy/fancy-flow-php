@@ -8,6 +8,7 @@ use FancyFlow\Capabilities\Capabilities;
 use FancyFlow\Capabilities\FakeLlmClient;
 use FancyFlow\Capabilities\LlmClientDetector;
 use FancyFlow\Capabilities\LlmRouteChoice;
+use FancyFlow\Capabilities\WorkflowResolutionFailure;
 use FancyFlow\Capabilities\WorkflowResolver;
 use FancyFlow\Schema\FlowGraph;
 
@@ -104,7 +105,7 @@ it('reports which capabilities are wired before a run needs them', function () {
     Capabilities::setLlmClient(FakeLlmClient::always('a'));
     Capabilities::setWorkflowResolver(new class implements WorkflowResolver
     {
-        public function resolve(string $ref): ?FlowGraph
+        public function resolve(string $ref, ?int $version = null): FlowGraph|WorkflowResolutionFailure|null
         {
             return null;
         }

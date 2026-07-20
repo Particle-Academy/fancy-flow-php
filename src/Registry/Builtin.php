@@ -279,6 +279,10 @@ final class Builtin
                     ['type' => 'text', 'key' => 'workflow', 'label' => 'Workflow', 'required' => true,
                         'placeholder' => 'onboarding-v2',
                         'description' => "Reference resolved by the host's WorkflowResolver."],
+                    ['type' => 'number', 'key' => 'version', 'label' => 'Pin to version',
+                        'description' => 'Optional. Leave blank to always run the child current version. '
+                            .'Pinning fails the run loudly if the child has moved on. Without it, someone '
+                            .'edits the child and this flow silently runs different logic.'],
                     ['type' => 'select', 'key' => 'mode', 'label' => 'Return', 'default' => 'output', 'options' => [
                         ['value' => 'output', 'label' => 'Output when it finishes'],
                         ['value' => 'stream', 'label' => 'Stream progress as it runs'],
