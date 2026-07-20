@@ -12,7 +12,7 @@ authors in `<FlowEditor>` runs unchanged on a PHP backend.
 composer require particle-academy/fancy-flow-php
 ```
 
-Requires PHP 8.2+. The core has **zero framework dependencies**. (A Laravel
+Requires PHP 8.3+. The core has **zero framework dependencies**. (A Laravel
 integration — service provider, queued durable runs, `#[FlowNode]` discovery,
 broadcast run status — lands in 0.2.)
 
