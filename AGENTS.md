@@ -24,7 +24,7 @@ Node and PHP. Don't break it.
 - `ExecutorRegistry` + `Contracts\{NodeExecutor, Resolver}` — behavior; resolves
   node id → kind → `*`.
 - `Runtime\{ExecutionContext, RunEvent, RunOptions, RunResult, Port, ...}`.
-- `Nodes\<Domain>\*Executor` — the 24 default executors, grouped by domain.
+- `Nodes\<Domain>\*Executor` — the 26 default executors, grouped by domain.
 - `Nodes\Support\*` — injectable client interfaces + deterministic fakes + the
   `Expr` `{{ path }}` resolver (safe, no arbitrary eval).
 - `Capabilities\*` — the HOST capability seam: `LlmClient` (`chooseRoute`, used
@@ -37,6 +37,19 @@ Node and PHP. Don't break it.
   keyed by kind name must key on EVERY id a kind answers to** — registry lookups
   and executor bindings both do, and a rename like `llm_branch` → `llm_router`
   is only survivable because of it.
+- `Schema\*` — WorkflowSchema v1 shapes; `Attributes\#[FlowNode]` — discovery.
+- `Marketplace\*` — third-party node packages (the `list`/`search`/`get` side of
+  what `npx fancy-cli add node <kind>` installs).
+
+## The optional Laravel layer (`src/Laravel/`)
+
+`illuminate/support` is **`suggest`-only** — the core above runs framework-free.
+When Laravel *is* present, `FancyFlowServiceProvider` wires: the `FancyFlow`
+facade + `FancyFlowManager`, `Jobs\RunWorkflowJob` (queued **durable** runs that
+pause and resume across `human_approval` / `user_input`), `EloquentWorkflowResolver`
++ `ContainerWorkflowResolver`, `ContainerLlmClient`, `#[FlowNode]` discovery,
+Artisan commands, HTTP controllers, and `RunEvent` → Laravel events. Nothing here
+may leak into the core's `require`.
 
 ## Conventions
 
@@ -65,8 +78,12 @@ envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
-0.1 core → 0.2 Laravel layer → 0.3 durable + agentic → 0.4 durable human
-input (`user_input` pause/resume) → 0.5 capabilities + namespaced kind ids
-(`llm_router`, `subflow`, shipped LLM adapters) → 0.6 Human+ (Reverb broadcast +
-MCP bridge).
+**Shipped (current tag `v0.8.1`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
+agentic → 0.4 durable human input (`user_input` pause/resume) → 0.5 capabilities
++ namespaced kind ids (`llm_router`, `subflow`, shipped LLM adapters) → 0.6–0.8
+Human+, the node marketplace, and `#[FlowNode]` discovery. Treat everything up to
+0.8 as **done, not planned** — `src/Laravel/` (service provider, facade,
+`Jobs/RunWorkflowJob`, Eloquent + container resolvers, Artisan, HTTP),
+`src/Marketplace/`, `src/Schema/`, and `src/Attributes/` are all live.
+
 Plan: envelope `.ai/plans/fancy-flow-php.md`.
