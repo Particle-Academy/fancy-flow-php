@@ -281,15 +281,19 @@ final class FlowRunner
      * Gather a node's inputs, keyed by target-port id (default `in`), seeded
      * with any initial inputs.
      *
-     * Only *active* incoming edges contribute — this is the contract the TS
-     * engine documents ("collectInputs() only reads from the active ones") as
-     * part of the merge-after-decision fix (#1). We implement that contract
-     * directly: an edge whose source port never produced a value (a dead branch)
-     * is skipped, so it can't clobber a live value arriving on the same port.
-     * The TS *code* assigns unconditionally, which lets a trailing dead edge
-     * overwrite a live one with `undefined`; skipping keeps the value the fix
-     * was meant to deliver, and matches TS in every case where a port has at
-     * most one active source.
+     * Only *active* incoming edges contribute — the contract the TS engine
+     * documents ("collectInputs() only reads from the active ones") as part of
+     * the merge-after-decision fix (#1). An edge whose source port never
+     * produced a value (a dead branch) is skipped, so it cannot clobber a live
+     * value arriving on the same port.
+     *
+     * This used to be a REAL divergence: TS assigned unconditionally, so a
+     * trailing dead edge overwrote a live one with `undefined` whenever two
+     * branches rejoined on the same handle. PHP implemented the documented
+     * contract, TS implemented the code — and the two disagreed silently, since
+     * both runtimes still reported success. **TS was fixed to match in
+     * fancy-flow 0.27.1**, so the runtimes now agree; the fixture
+     * `23-merge-same-handle` pins the behaviour on both sides.
      *
      * @param list<FlowEdge>                    $incoming
      * @param array<string,mixed>               $portValues

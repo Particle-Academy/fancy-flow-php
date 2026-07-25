@@ -1,0 +1,111 @@
+{
+    "name": "23-merge-same-handle",
+    "description": "Two mutually-exclusive branches rejoin on the SAME target handle. 05 covers the merge-node shape, where each branch lands on its own handle and so cannot collide; this covers the shape that can: the dead branch must not clobber the live one's value with nothing. Ordering the dead edge LAST is what makes it bite.",
+    "schema": {
+        "$schema": "https://particle.academy/schemas/workflow/v1.json",
+        "version": 1,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "t",
+                    "kind": "manual_trigger",
+                    "position": {
+                        "x": 0,
+                        "y": 0
+                    }
+                },
+                {
+                    "id": "br",
+                    "kind": "branch",
+                    "position": {
+                        "x": 1,
+                        "y": 0
+                    },
+                    "config": {
+                        "condition": "{{ $json.ok }}"
+                    }
+                },
+                {
+                    "id": "a",
+                    "kind": "transform",
+                    "position": {
+                        "x": 2,
+                        "y": 0
+                    },
+                    "config": {
+                        "expression": "A"
+                    }
+                },
+                {
+                    "id": "b",
+                    "kind": "transform",
+                    "position": {
+                        "x": 2,
+                        "y": 1
+                    },
+                    "config": {
+                        "expression": "B"
+                    }
+                },
+                {
+                    "id": "o",
+                    "kind": "output",
+                    "position": {
+                        "x": 3,
+                        "y": 0
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "t",
+                    "target": "br"
+                },
+                {
+                    "id": "e2",
+                    "source": "br",
+                    "target": "a",
+                    "sourceHandle": "true"
+                },
+                {
+                    "id": "e3",
+                    "source": "br",
+                    "target": "b",
+                    "sourceHandle": "false"
+                },
+                {
+                    "id": "e4",
+                    "source": "a",
+                    "target": "o"
+                },
+                {
+                    "id": "e5",
+                    "source": "b",
+                    "target": "o"
+                }
+            ]
+        }
+    },
+    "initialInputs": {
+        "t": {
+            "ok": true
+        }
+    },
+    "expected": {
+        "ok": true,
+        "outputs": {
+            "t": {
+                "ok": true
+            },
+            "br": {
+                "branch": "true",
+                "value": {
+                    "ok": true
+                }
+            },
+            "a": "A",
+            "o": "A"
+        }
+    }
+}

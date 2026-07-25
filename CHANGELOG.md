@@ -8,6 +8,34 @@ upgrading.
 
 ---
 
+## 0.8.1
+
+Parity coverage for a divergence that was real, documented, and never tested.
+
+### Added
+
+- **Parity fixture `23-merge-same-handle`** — two mutually-exclusive branches
+  rejoining on the **same** target handle. `05-merge-after-decision` already
+  covered a merge point, but via a `merge` node where each branch lands on its
+  own handle (`a` / `b`) — a shape where the branches structurally *cannot*
+  collide. The shape that can collide, and that appears in ordinary "route, then
+  continue" graphs, had no fixture at all.
+
+  This runtime always handled it correctly. **fancy-flow (TS) did not** until
+  0.27.1: it assigned every incoming edge unconditionally, so a dead branch
+  ordered last overwrote the live branch's value with `undefined` — silently,
+  with the run still reporting success. The divergence was even described in
+  `FlowRunner::collectInputs()`'s docblock; it had simply never been pinned by a
+  test, which is exactly what parity fixtures exist to prevent.
+
+### Fixed
+
+- **Corrected that docblock.** It stated as present-tense fact that "the TS code
+  assigns unconditionally". True until fancy-flow 0.27.1, misleading after it —
+  a note about a divergence that no longer exists is worse than no note.
+
+**Consumers need do nothing** — no behaviour change in this package.
+
 ## 0.8.0
 
 Mirrors fancy-flow 0.16.0. All of it comes from the MOIC Suite consumer's review
