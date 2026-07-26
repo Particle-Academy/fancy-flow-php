@@ -8,6 +8,33 @@ upgrading.
 
 ---
 
+## 0.9.1
+
+### Changed
+
+- **BREAKING (node manifests): a runtime declares `files`, not `entry` /
+  `package`.** Marketplace nodes are **vendored**, not installed —
+  `fancy-cli add node` copies a node's source into the project the way it copies
+  a component's. `entry` and `package` described an npm/Composer install that no
+  longer happens, so a manifest carrying them is now rejected rather than
+  silently claiming an install path nothing honours.
+
+  ```jsonc
+  "ui": ["ui"],                                    // the React surface, always copied
+  "runtimes": {
+    "ts":  { "files": ["js"],  "engine": ">=0.30.0" },
+    "php": { "files": ["php"], "engine": ">=0.9.0" }
+  }
+  ```
+
+  `ui` is separate from `runtimes` on purpose: the editor is React on every
+  host, so a Laravel project needs the React kind and does **not** need the
+  TypeScript executor. Folding them together loses one or the other.
+
+  **What you must DO:** nothing unless you authored a node manifest — the
+  registry served none until now. If you did, replace each runtime's `entry` /
+  `package` with `files`, and move the surface to a top-level `ui`.
+
 ## 0.9.0
 
 ### Added

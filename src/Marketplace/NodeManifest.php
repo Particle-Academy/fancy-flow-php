@@ -393,14 +393,28 @@ final class NodeManifest
                 continue;
             }
 
-            $hasEntry = is_string($spec['entry'] ?? null) && trim((string) $spec['entry']) !== '';
-            $hasPackage = is_string($spec['package'] ?? null) && trim((string) $spec['package']) !== '';
+            $files = is_array($spec['files'] ?? null) ? $spec['files'] : null;
+            $validFiles = $files !== null && $files !== [] && ! array_filter(
+                $files,
+                fn ($f) => ! is_string($f) || trim($f) === '',
+            );
 
-            if (! $hasEntry && ! $hasPackage) {
-                $problems[] = self::error("runtimes.{$runtime}", 'Needs `entry` (a module path) or `package` (a dependency requirement).');
+            if (! $validFiles) {
+                $problems[] = self::error(
+                    "runtimes.{$runtime}",
+                    "Needs `files` — the node source directories this runtime's backend lives in, relative to the node.",
+                );
             }
-            if ($hasEntry && $hasPackage) {
-                $problems[] = self::error("runtimes.{$runtime}", 'Declare `entry` or `package`, not both — which one is authoritative is otherwise ambiguous.');
+            if (array_key_exists('entry', $spec) || array_key_exists('package', $spec)) {
+                // Nodes are VENDORED, not installed: the CLI copies a node's
+                // source into the project the way it copies a component's.
+                // `entry` / `package` described an npm/Composer install that no
+                // longer happens, and leaving them readable would let a
+                // manifest claim an install path nothing honours.
+                $problems[] = self::error(
+                    "runtimes.{$runtime}",
+                    '`entry` / `package` are gone — nodes are copied into a project, not installed from a registry. Declare `files` instead.',
+                );
             }
             if (! is_string($spec['engine'] ?? null) || trim((string) $spec['engine']) === '') {
                 $problems[] = self::error(

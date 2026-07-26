@@ -18,8 +18,8 @@ function validManifest(array $overrides = []): array
         'name' => '@acme/fancy-flow-salesforce',
         'kind' => '@acme/salesforce_upsert',
         'runtimes' => [
-            'ts' => ['entry' => 'dist/executor.js', 'engine' => '^0.15'],
-            'php' => ['package' => 'acme/fancy-flow-salesforce:^0.1', 'engine' => '^0.7'],
+            'ts' => ['files' => ['js'], 'engine' => '^0.15'],
+            'php' => ['files' => ['php'], 'engine' => '^0.7'],
         ],
         'fixtures' => 'fixtures/salesforce_upsert.json',
     ], $overrides);
@@ -95,7 +95,7 @@ it('catches the TS-only package on a PHP host', function () {
     // The exact gap MOIC hit: the node installs, appears in the palette, and
     // then cannot run — with nothing visible beforehand.
     $problems = NodeManifest::checkRuntimeSupport(
-        ['kind' => '@acme/x', 'runtimes' => ['ts' => ['entry' => 'dist/x.js', 'engine' => '^0.15']]],
+        ['kind' => '@acme/x', 'runtimes' => ['ts' => ['files' => ['js'], 'engine' => '^0.15']]],
         ['php'],
     );
 
@@ -132,7 +132,7 @@ it('rejects a leftover single fancyFlow range', function () {
 });
 
 it('requires an engine range on every runtime', function () {
-    $problems = NodeManifest::validate(validManifest(['runtimes' => ['ts' => ['entry' => 'dist/x.js']]]));
+    $problems = NodeManifest::validate(validManifest(['runtimes' => ['ts' => ['files' => ['js']]]]));
 
     expect(fields($problems))->toContain('runtimes.ts.engine');
 });
