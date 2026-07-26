@@ -8,6 +8,35 @@ upgrading.
 
 ---
 
+## 0.8.2
+
+### Changed
+
+- **The documented Prism is now `particle-academy/prism`**, Particle Academy's
+  maintained fork. Upstream `prism-php/prism` has not shipped since **March
+  2026** and is eleven minor versions behind; the README was still telling
+  people to install it. The `suggest` entry and the dev dependency move with it.
+
+  **No code changed and nothing breaks.** The fork carries the same
+  `Prism\Prism\` namespace, the shipped `PrismLlmClient` imports
+  `Prism\Prism\Prism` either way, and detection is `class_exists()`-guarded — so
+  an existing install on upstream keeps working exactly as before. This package's
+  `require` stays PHP-only.
+
+  **What you must DO:** nothing, unless you want the maintained one. If you do
+  switch, **remove `prism-php/prism` in the same commit you add the fork.** They
+  provide the same namespace and the fork declares no `replace`, so Composer will
+  install both quite happily and leave you with two copies of every
+  `Prism\Prism\*` class.
+
+### Security
+
+- **`guzzlehttp/guzzle` 7.14.2 → 7.15.1** (dev only). Pulled in by the dependency
+  change above, and it arrived carrying three medium advisories — URI fragments
+  leaking into redirect `Referer` headers, host-only cookie scope not preserved,
+  and unbounded response cookies. `composer audit` is clean again. Dev-only, so
+  no consumer was exposed.
+
 ## 0.8.1
 
 Parity coverage for a divergence that was real, documented, and never tested.

@@ -147,12 +147,23 @@ port the model invents never routes.** An unrecognised choice goes to the
 logs a warning — because emitting on a port with no edge silently ends the branch
 and the run then reports success having done nothing.
 
-**It ships working.** Adapters for `prism-php/prism` and `laravel/ai` are
-included and auto-detected — install either one and the node just works:
+**It ships working.** Adapters for Prism and `laravel/ai` are included and
+auto-detected — install either one and the node just works:
 
 ```bash
-composer require prism-php/prism   # or: composer require laravel/ai
+composer require particle-academy/prism   # or: composer require laravel/ai
 ```
+
+> **Which Prism?** `particle-academy/prism` is Particle Academy's maintained fork
+> of `prism-php/prism`, which has not shipped since March 2026. It carries the
+> same `Prism\Prism\` namespace, so the adapter is identical either way and
+> switching needs no code change — the fork is simply the one still getting
+> releases.
+>
+> **Do not install both.** They provide the same namespace and the fork declares
+> no `replace`, so Composer will happily install the pair and leave you with two
+> copies of every `Prism\Prism\*` class. If you already require
+> `prism-php/prism`, remove it in the same commit you add the fork.
 
 Both are `suggest`-only and `class_exists()`-guarded; this package's `require`
 stays PHP-only. Both constrain the model to the declared ports via structured
