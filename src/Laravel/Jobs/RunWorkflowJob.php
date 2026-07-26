@@ -11,6 +11,7 @@ use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Nodes\DurableApprovalExecutor;
 use FancyFlow\Laravel\Nodes\DurableUserInputExecutor;
+use FancyFlow\Laravel\TriggerCohort;
 use FancyFlow\Runtime\Pause;
 use FancyFlow\Runtime\RunOptions;
 use Illuminate\Bus\Queueable;
@@ -37,6 +38,10 @@ use Throwable;
  *     {@see WorkflowRun::submitInput()} records the typed values payload and
  *     re-queues this job. {@see WorkflowRun::awaitingForm()} exposes the form
  *     to render while paused.
+ *   - **Trigger collision** — a run belonging to a {@see TriggerCohort} re-checks
+ *     its guard just before starting and hands the cohort on when it settles, so
+ *     workflows fired by the same event run in order and a run whose state has
+ *     vanished is `skipped` with a reason rather than executing over nothing.
  */
 final class RunWorkflowJob implements ShouldQueue
 {
@@ -65,10 +70,22 @@ final class RunWorkflowJob implements ShouldQueue
         return (int) config('fancy-flow.queue.backoff', 0);
     }
 
-    public function handle(FancyFlowManager $flow, Dispatcher $events): void
+    public function handle(FancyFlowManager $flow, Dispatcher $events, TriggerCohort $cohort): void
     {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
         if ($run === null || $run->status === WorkflowRun::COMPLETED) {
+            return;
+        }
+
+        // Re-check the trigger precondition at the LAST possible moment — not at
+        // dispatch. In a serialized cohort the runs ahead of this one have
+        // already finished, and one of them may have deleted the very record
+        // this run was queued for. Checking now is the difference between a
+        // recorded skip and a run that completes over nothing (#collision).
+        if (! $cohort->allows($run)) {
+            $events->dispatch(new WorkflowSettled($this->runKey, WorkflowSettled::SKIPPED, $run->skipped_reason));
+            $cohort->advance($run);
+
             return;
         }
 
@@ -83,6 +100,14 @@ final class RunWorkflowJob implements ShouldQueue
             $this->execute($run, $flow, $events, $outcome, $settleError);
         } finally {
             $events->dispatch(new WorkflowSettled($this->runKey, $outcome, $settleError));
+
+            // Hand the cohort on only when this run is genuinely done with the
+            // shared state. A pause is still holding it (a person is deciding),
+            // and an ERRORED attempt may yet be retried — that one advances from
+            // failed(), once the queue gives up for good.
+            if ($outcome === WorkflowSettled::COMPLETED) {
+                $cohort->advance($run);
+            }
         }
     }
 
@@ -185,11 +210,16 @@ final class RunWorkflowJob implements ShouldQueue
 
     public function failed(Throwable $e): void
     {
-        WorkflowRun::query()
-            ->where('run_key', $this->runKey)
-            ->first()
-            ?->forceFill(['status' => WorkflowRun::FAILED, 'error' => $e->getMessage()])
-            ->save();
+        $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
+        $run?->forceFill(['status' => WorkflowRun::FAILED, 'error' => $e->getMessage()])->save();
+
+        // Retries are exhausted, so the cohort moves on. A failed run does NOT
+        // cancel the rest: the guard is what decides whether the next one still
+        // has state to act on, and "the run before me failed" is not by itself
+        // an answer to that question.
+        if ($run !== null) {
+            app(TriggerCohort::class)->advance($run);
+        }
 
         // The run is terminally failed once retries are exhausted, and nothing
         // announced it — only the success path dispatched an outcome event.

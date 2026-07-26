@@ -8,6 +8,74 @@ upgrading.
 
 ---
 
+## 0.9.0
+
+### Added
+
+- **Trigger cohorts — `FancyFlow::dispatchCohort()`.** Fan one event out to
+  several workflows the old way (a loop over `dispatch()`) and you get N
+  independent queue jobs in whatever order the worker picks them up. Nothing
+  orders them, and nothing stops the second from running after the first has
+  **deleted the record they were both fired for**. The second run then completes
+  over missing input and reports *success* — no exception, no log line, a green
+  row in the run list.
+
+  A cohort makes that fan-out one thing:
+
+  ```php
+  FancyFlow::dispatchCohort(
+      [$enrichFlow, $archiveFlow, $notifyFlow],   // declared order IS the run order
+      ['trigger' => $deal->toArray()],            // snapshotted per run at dispatch
+      guard: ['name' => 'record-exists', 'args' => ['model' => Deal::class, 'id' => $deal->id]],
+  );
+  ```
+
+  - **Ordered** — runs carry `cohort_seq`, assigned at dispatch. Queue arrival
+    stops deciding anything.
+  - **Serialized** — only the head is enqueued; each run enqueues its successor
+    when it settles, so run N+1 observes run N's side effects on purpose rather
+    than by luck. A run parked on a human wait has *not* settled and holds the
+    cohort until someone decides.
+  - **Guarded** — the named `TriggerGuard` is re-checked immediately before each
+    run starts, not at dispatch, because the whole hazard is what changed in
+    between. A run whose guard fails is `skipped` with `skipped_reason` recorded.
+
+  If `$archiveFlow` deletes the deal, `$notifyFlow` is skipped with
+  "App\Models\Deal 41 no longer exists" instead of notifying about nothing.
+
+  Three policies via `policy:` — `serial-guarded` (default), `serial` (ordered,
+  unguarded), `parallel` (the old all-at-once behaviour, correct when the
+  fan-out shares no state). A guard that throws or cannot be resolved **fails
+  closed** and skips: a skip is visible and re-runnable, a run over missing state
+  is neither. A run that *fails* does not cancel the cohort — "the run before me
+  failed" is not an answer to "is my input still there", and the guard is asked
+  either way.
+
+- **`FancyFlow\Contracts\TriggerGuard`** — `passes()` / `reason()`. Guards are
+  resolved by name from the container (register them under `fancy-flow.guards`),
+  never serialized as closures, since a queued job may run in another process
+  minutes later.
+
+- **A built-in `record-exists` guard** covering the common case with no code:
+  pass `model` + `id` (or `column`). Register your own under the same name to
+  override it — for soft deletes or tenancy — without renaming every cohort.
+
+- **`WorkflowRun::SKIPPED`** and a matching **`WorkflowSettled::SKIPPED`**
+  outcome, so a host still tears down anything it bound for the run. `SKIPPED`
+  counts as terminal in `WorkflowSettled::isTerminal()`.
+
+- **Migration** adding `cohort_key` (indexed), `cohort_seq`, `cohort_policy`,
+  `guard`, and `skipped_reason` to the runs table.
+
+  **What you must DO:** run `php artisan migrate` (or re-publish the migrations
+  if you vendored them). Everything else is additive — every column is nullable,
+  `dispatch()` is untouched, and a run dispatched the ordinary way has no cohort
+  and behaves exactly as before.
+
+  The TypeScript twin is `runCohort()` in `@particle-academy/fancy-flow` 0.29.0
+  — same policies, same guard semantics, same fail-closed rule, in-process rather
+  than across a queue.
+
 ## 0.8.2
 
 ### Changed

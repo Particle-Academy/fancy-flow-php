@@ -146,6 +146,68 @@ final class FancyFlowManager
         return $run;
     }
 
+    /**
+     * Dispatch every workflow one trigger event fired, as a cohort.
+     *
+     * Use this instead of calling {@see dispatch()} in a loop whenever the runs
+     * share state. A loop gives N independent jobs in arbitrary queue order, so
+     * a workflow that deletes the triggering record leaves the others to run
+     * over nothing and report success. A cohort orders them, runs them one at a
+     * time, and re-checks a precondition before each.
+     *
+     * ```php
+     * FancyFlow::dispatchCohort(
+     *     [$archiveFlow, $notifyFlow],           // declared order IS the run order
+     *     ['trigger' => $event->toArray()],      // snapshotted per run at dispatch
+     *     guard: ['name' => 'record-exists', 'args' => ['id' => $deal->id]],
+     * );
+     * ```
+     *
+     * @param  array<int, FlowGraph|ImportResult|string|array<string,mixed>>  $flows
+     * @param  array<string,mixed>  $initialInputs  seeded into every run in the cohort
+     * @param  array{name:string,args?:array<string,mixed>}|null  $guard
+     * @return array<int, \FancyFlow\Laravel\Models\WorkflowRun>
+     */
+    public function dispatchCohort(
+        array $flows,
+        array $initialInputs = [],
+        ?array $guard = null,
+        string $policy = \FancyFlow\Laravel\Models\WorkflowRun::POLICY_SERIAL_GUARDED,
+    ): array {
+        $cohortKey = self::newRunId();
+        $runs = [];
+
+        foreach (array_values($flows) as $seq => $flow) {
+            $run = new \FancyFlow\Laravel\Models\WorkflowRun();
+            $run->forceFill([
+                'run_key' => self::newRunId(),
+                'cohort_key' => $cohortKey,
+                'cohort_seq' => $seq,
+                'cohort_policy' => $policy,
+                'guard' => $guard,
+                'status' => \FancyFlow\Laravel\Models\WorkflowRun::PENDING,
+                'schema' => $this->toSchemaArray($flow),
+                // Snapshotted per run: an earlier run mutating the record can
+                // never rewrite a later run's payload.
+                'initial_inputs' => $initialInputs,
+            ])->save();
+            $runs[] = $run;
+        }
+
+        // Serial policies enqueue only the head — each run enqueues its
+        // successor when it settles, which is what makes the ordering real
+        // rather than merely declared.
+        $toEnqueue = $policy === \FancyFlow\Laravel\Models\WorkflowRun::POLICY_PARALLEL
+            ? $runs
+            : array_slice($runs, 0, 1);
+
+        foreach ($toEnqueue as $run) {
+            \FancyFlow\Laravel\Jobs\RunWorkflowJob::enqueue($run);
+        }
+
+        return $runs;
+    }
+
     /** @return array<string,mixed> */
     private function toSchemaArray(FlowGraph|ImportResult|string|array $flow): array
     {

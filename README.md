@@ -320,6 +320,51 @@ Route::flow('/hooks/onboard', $schema);          // POST → dispatch a durable 
 class Project extends Model { use HasWorkflows; } // $project->workflows()
 ```
 
+### One trigger, several workflows
+
+When a single event fires more than one workflow, dispatch them **together**:
+
+```php
+FancyFlow::dispatchCohort(
+    [$enrichFlow, $archiveFlow, $notifyFlow],   // declared order IS the run order
+    ['trigger' => $deal->toArray()],            // snapshotted per run at dispatch
+    guard: ['name' => 'record-exists', 'args' => ['model' => Deal::class, 'id' => $deal->id]],
+);
+```
+
+A loop over `dispatch()` gives you three independent jobs in whatever order the
+worker picks them up. If `$archiveFlow` deletes the deal, `$notifyFlow` runs
+afterwards against a record that is gone — and **completes successfully**, having
+done nothing. Nothing throws. That silent success is what a cohort removes.
+
+A cohort is ordered (`cohort_seq`), serialized (each run enqueues its successor
+when it settles — a run parked on a human wait holds the cohort), and **guarded**:
+the named guard is re-checked immediately before each run starts, not at dispatch,
+because the hazard is precisely what changed in between. A run whose guard fails
+is `skipped`, with the reason recorded:
+
+```php
+$notify->status;          // 'skipped'
+$notify->skipped_reason;  // 'App\Models\Deal 41 no longer exists'
+```
+
+`record-exists` ships built in. For anything else, implement `TriggerGuard` and
+register it — guards resolve by name from the container, so constructor DI works
+and nothing is serialized into a job:
+
+```php
+// config/fancy-flow.php
+'guards' => ['still-open' => \App\Flow\Guards\DealStillOpen::class],
+```
+
+Guards **fail closed**: one that throws, or resolves to the wrong thing, skips
+the run. A skip is visible and re-runnable; a run over missing state is neither.
+Pass `policy: WorkflowRun::POLICY_PARALLEL` for fan-outs that genuinely share no
+state.
+
+> The TypeScript twin is `runCohort()` in `@particle-academy/fancy-flow` — same
+> policies, same guard semantics, in-process rather than across a queue.
+
 ### Agentic
 
 The `agent` kind runs an LLM with tools and bounded multi-step reasoning

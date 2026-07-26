@@ -35,6 +35,12 @@ final class WorkflowSettled
     public const AWAITING_HUMAN = 'awaiting_human';
     /** The attempt ended by throwing — the queue may retry it. */
     public const ERRORED = 'errored';
+    /**
+     * The run never started: its cohort {@see \FancyFlow\Contracts\TriggerGuard}
+     * did not pass, because the state it was queued to act on changed underneath
+     * it. `WorkflowRun::$skipped_reason` says what changed.
+     */
+    public const SKIPPED = 'skipped';
 
     public function __construct(
         public readonly string $runId,
@@ -46,7 +52,7 @@ final class WorkflowSettled
     /** True when no further attempt will run for this outcome without new input. */
     public function isTerminal(): bool
     {
-        return $this->outcome === self::COMPLETED || $this->outcome === self::FAILED;
+        return in_array($this->outcome, [self::COMPLETED, self::FAILED, self::SKIPPED], true);
     }
 
     /** True when the run stopped to wait on a human decision or submission. */

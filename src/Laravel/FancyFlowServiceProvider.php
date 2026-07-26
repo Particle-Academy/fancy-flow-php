@@ -93,6 +93,9 @@ final class FancyFlowServiceProvider extends ServiceProvider
             fn (Container $app): WorkflowResolver => new EloquentWorkflowResolver($app->make(NodeKindRegistry::class)),
         );
 
+        // Ordering + guarding for the runs one trigger event fires.
+        $this->app->singleton(TriggerCohort::class, fn (Container $app): TriggerCohort => new TriggerCohort($app));
+
         $this->app->singleton(FancyFlowManager::class, fn (Container $app): FancyFlowManager => new FancyFlowManager(
             $app->make(NodeKindRegistry::class),
             $app->make(ExecutorRegistry::class),

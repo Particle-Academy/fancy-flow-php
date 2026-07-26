@@ -38,11 +38,29 @@ class WorkflowRun extends Model
     public const COMPLETED = 'completed';
     public const FAILED = 'failed';
 
+    /**
+     * Never started, deliberately. A cohort run whose {@see TriggerGuard} did
+     * not pass — the state it was queued to act on changed underneath it, most
+     * often because an earlier run in the same cohort deleted it.
+     *
+     * Distinct from FAILED: nothing went wrong, and `skipped_reason` says what
+     * changed. Distinct from silently completing, which is what happened before
+     * cohorts and is exactly the outcome that looks like success.
+     */
+    public const SKIPPED = 'skipped';
+
+    /** Cohort collision policies. */
+    public const POLICY_SERIAL_GUARDED = 'serial-guarded';
+    public const POLICY_SERIAL = 'serial';
+    public const POLICY_PARALLEL = 'parallel';
+
     protected $guarded = [];
 
     protected $casts = [
         'schema' => 'array',
         'initial_inputs' => 'array',
+        'guard' => 'array',
+        'cohort_seq' => 'integer',
         'node_outputs' => 'array',
         'outputs' => 'array',
         'events' => 'array',

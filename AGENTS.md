@@ -23,6 +23,8 @@ Node and PHP. Don't break it.
 - `NodeKindRegistry` + `Registry\{NodeKind, ConfigField, Builtin}` — the kinds.
 - `ExecutorRegistry` + `Contracts\{NodeExecutor, Resolver}` — behavior; resolves
   node id → kind → `*`.
+- `Contracts\TriggerGuard` — the precondition a cohort run re-checks just before
+  it starts. Fails CLOSED by design; see `Laravel\TriggerCohort`.
 - `Runtime\{ExecutionContext, RunEvent, RunOptions, RunResult, Port, ...}`.
 - `Nodes\<Domain>\*Executor` — the 26 default executors, grouped by domain.
 - `Nodes\Support\*` — injectable client interfaces + deterministic fakes + the
@@ -46,7 +48,8 @@ Node and PHP. Don't break it.
 `illuminate/support` is **`suggest`-only** — the core above runs framework-free.
 When Laravel *is* present, `FancyFlowServiceProvider` wires: the `FancyFlow`
 facade + `FancyFlowManager`, `Jobs\RunWorkflowJob` (queued **durable** runs that
-pause and resume across `human_approval` / `user_input`), `EloquentWorkflowResolver`
+pause and resume across `human_approval` / `user_input`), `TriggerCohort` (ordering + guarding the runs
+one event fires — see `dispatchCohort()`), `EloquentWorkflowResolver`
 + `ContainerWorkflowResolver`, `ContainerLlmClient`, `#[FlowNode]` discovery,
 Artisan commands, HTTP controllers, and `RunEvent` → Laravel events. Nothing here
 may leak into the core's `require`.
@@ -78,12 +81,13 @@ envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
-**Shipped (current tag `v0.8.1`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
+**Shipped (current tag `v0.9.0`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
 agentic → 0.4 durable human input (`user_input` pause/resume) → 0.5 capabilities
 + namespaced kind ids (`llm_router`, `subflow`, shipped LLM adapters) → 0.6–0.8
-Human+, the node marketplace, and `#[FlowNode]` discovery. Treat everything up to
-0.8 as **done, not planned** — `src/Laravel/` (service provider, facade,
-`Jobs/RunWorkflowJob`, Eloquent + container resolvers, Artisan, HTTP),
-`src/Marketplace/`, `src/Schema/`, and `src/Attributes/` are all live.
+Human+, the node marketplace, and `#[FlowNode]` discovery → 0.9 trigger cohorts
+(`dispatchCohort`, `TriggerGuard`, the `skipped` status). Treat everything up to
+0.9 as **done, not planned** — `src/Laravel/` (service provider, facade,
+`Jobs/RunWorkflowJob`, `TriggerCohort`, Eloquent + container resolvers, Artisan,
+HTTP), `src/Marketplace/`, `src/Schema/`, and `src/Attributes/` are all live.
 
 Plan: envelope `.ai/plans/fancy-flow-php.md`.

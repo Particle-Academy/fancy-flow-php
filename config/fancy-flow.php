@@ -93,6 +93,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Trigger guards (0.9)
+    |--------------------------------------------------------------------------
+    | When one event fires several workflows, dispatch them together with
+    | `FancyFlow::dispatchCohort()` instead of a loop over `dispatch()`. A cohort
+    | runs them in the order you declared, one at a time, and re-checks a named
+    | guard immediately before each — so a workflow that deletes the triggering
+    | record leaves the others SKIPPED with a recorded reason, rather than
+    | completing "successfully" over state that is no longer there.
+    |
+    | Each entry maps a guard name to a class implementing
+    | FancyFlow\Contracts\TriggerGuard. Names are resolved through the container
+    | at run time (never serialized), so constructor DI works.
+    */
+    'guards' => [
+        // 'record-exists' => \App\Flow\Guards\RecordStillExists::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Persistence (0.3)
     |--------------------------------------------------------------------------
     | When enabled, publishable migrations create the Workflow + WorkflowRun
