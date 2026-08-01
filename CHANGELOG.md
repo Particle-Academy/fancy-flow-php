@@ -8,6 +8,54 @@ upgrading.
 
 ---
 
+## 0.11.0
+
+### Changed
+
+- **BREAKING — `per_node` is now the DEFAULT queue driver.** 0.10 shipped it
+  behind `fancy-flow.queue.driver`, defaulting to `single`, so upgrading to 0.10
+  changed nothing: the durability defect it fixed stayed live for every host that
+  did not know to opt in, and nobody opts into a flag they have not read about.
+
+  **What you must DO: run `php artisan migrate`** if you have not since 0.10 —
+  `per_node` needs the `workflow_run_nodes` table, and the package's migrations
+  are auto-loaded, so there is nothing to publish first.
+
+  Beyond that, most hosts do nothing:
+
+  - **A run already in flight is safe.** The new driver *adopts* a checkpoint
+    written by the old one instead of replaying it, so an upgrade mid-run does
+    not re-execute completed nodes.
+  - **`FANCY_FLOW_QUEUE_DRIVER=single` restores the old behaviour exactly.** That
+    driver is unchanged, keeps its own test suite, and is **not deprecated**.
+  - Runs are now carried by `AdvanceWorkflowJob` + `RunNodeJob` rather than a
+    single `RunWorkflowJob`. If you queue-monitor by job class name, or assert on
+    it in tests, those names change. Every entry point still routes through
+    `RunWorkflowJob::enqueue()`.
+  - `queue.tries` now applies **per node** rather than per run, so one transient
+    node failure no longer takes a whole graph down. Nodes declaring
+    `sideEffects: unsafe-to-replay` still get exactly one attempt regardless of
+    `tries`, because a retried `git_pr_open` opens a second pull request.
+
+  Why the default moved rather than staying opt-in: under `single`,
+  `node_outputs` was written in exactly one place — **after** the whole graph
+  returned. A worker killed mid-run (timeout, deploy, OOM, `SIGKILL`)
+  checkpointed nothing, so the retry resumed from the *previous* checkpoint and
+  re-ran every node that had completed in the killed attempt. A fix nobody
+  receives is not a fix.
+
+### Fixed
+
+- **`DurableTestCase` tested whichever driver happened to ship.** It never pinned
+  `fancy-flow.queue.driver`, so it inherited the shipped default — and the moment
+  that default flipped, three of its tests failed and the rest quietly repointed
+  at the other driver while keeping names that claimed otherwise. The failures
+  were the lucky part. It now pins `single` explicitly, the way `PerNodeTestCase`
+  always pinned `per_node`, so the two drivers stay independently covered.
+
+293 tests passing, both drivers covered separately, and the 22 parity fixtures
+still reproduce their golden outputs through the per-node driver.
+
 ## 0.10.0
 
 ### Added

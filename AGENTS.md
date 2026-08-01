@@ -108,18 +108,23 @@ envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
-**Shipped (current tag `v0.10.0`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
+**Shipped (current tag `v0.11.0`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
 agentic → 0.4 durable human input (`user_input` pause/resume) → 0.5 capabilities
 + namespaced kind ids (`llm_router`, `subflow`, shipped LLM adapters) → 0.6–0.8
 Human+, the node marketplace, and `#[FlowNode]` discovery → 0.9 trigger cohorts
 (`dispatchCohort`, `TriggerGuard`, the `skipped` status) → 0.10 one job per node
 (the `per_node` queue driver, the `workflow_run_nodes` claim table, per-node
-retries keyed on `sideEffects`). Treat everything up to 0.10 as **done, not
+retries keyed on `sideEffects`) → 0.11 that driver became the DEFAULT. Treat
+everything up to 0.11 as **done, not
 planned** — `src/Laravel/` (service provider, facade, both queue drivers,
 `TriggerCohort`, Eloquent + container resolvers, Artisan, HTTP),
 `src/Marketplace/`, `src/Schema/`, and `src/Attributes/` are all live.
 
-`per_node` is opt-in; the default stays `single` until 0.11, so the two drivers
-have to keep passing the same durable suite.
+**`per_node` is the default as of 0.11.** `single` is still fully supported and
+NOT deprecated — `FANCY_FLOW_QUEUE_DRIVER=single` selects it — so the two drivers
+have to keep passing the same durable suite. Each pins its own driver explicitly
+in its test case (`DurableTestCase` → `single`, `PerNodeTestCase` → `per_node`);
+neither may go back to inheriting the shipped default, or the next flip silently
+repoints a suite at the driver it does not name.
 
 Plan: envelope `.ai/plans/fancy-flow-php.md`.
