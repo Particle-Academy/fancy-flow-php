@@ -81,14 +81,56 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Queue (durable runs — 0.3)
+    | Queue (durable runs — 0.3, per-node jobs — 0.10)
     |--------------------------------------------------------------------------
+    | `driver` decides how a run is carried on the queue.
+    |
+    |   "single"    one job for the whole graph. The checkpoint is written when
+    |               that job returns — so a worker killed mid-run (timeout,
+    |               deploy, OOM) checkpoints nothing, and the retry re-runs every
+    |               node that had already completed.
+    |
+    |   "per_node"  one job per node. Each node's output is written as it
+    |               finishes, claimed through a unique constraint so two workers
+    |               can never run the same node. A killed worker loses at most
+    |               the node that was in flight; independent branches run in
+    |               parallel on separate workers; retries become per node, so a
+    |               kind declaring `sideEffects: unsafe-to-replay` gets exactly
+    |               one attempt while a flaky HTTP node can have several.
+    |
+    | "single" remains the default so upgrading changes nothing. Switching is a
+    | config change: every entry point routes through RunWorkflowJob::enqueue().
+    | "per_node" needs the workflow_run_nodes migration.
     */
     'queue' => [
+        'driver' => env('FANCY_FLOW_QUEUE_DRIVER', 'single'),
         'connection' => env('FANCY_FLOW_QUEUE_CONNECTION'),
         'queue' => env('FANCY_FLOW_QUEUE', 'default'),
+
+        // Attempts per job: the whole run under "single", one node under
+        // "per_node".
         'tries' => 1,
         'backoff' => 0,
+
+        // Per-kind attempt overrides, for "per_node" only. Keyed by kind id
+        // (bare or namespaced — both resolve). A kind declaring
+        // `sideEffects: unsafe-to-replay` is pinned to 1 regardless: the node
+        // has said a second attempt is not a repeat of the first.
+        'node_tries' => [
+            // 'api_request' => 3,
+        ],
+
+        // How many extra nodes one "per_node" job may run inline before handing
+        // back to the queue. A round trip per node is real overhead, and a chain
+        // of fast nodes is mostly overhead — draining collapses such a chain
+        // back into one job. It only ever drains where the next step is
+        // unambiguous: exactly one ready successor, single-attempt, no human
+        // wait. Fan-out always dispatches, so parallelism is never traded away.
+        //
+        // OFF by default: draining trades a little of the durability the driver
+        // exists to provide for latency, and that should be chosen rather than
+        // inherited.
+        'drain_limit' => 0,
     ],
 
     /*

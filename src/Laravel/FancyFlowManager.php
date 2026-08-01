@@ -87,6 +87,13 @@ final class FancyFlowManager
      *
      * @param array<string,array<string,mixed>> $initialInputs
      * @param (callable(RunEvent):void)|null    $onEvent
+     * @param list<string>|null                 $eventNodes Restrict the Laravel event
+     *        bridge to these node ids, and suppress the run-level ones. The
+     *        per-node queue driver replays a run's completed prefix to rebuild
+     *        one node's inputs, and those republished nodes are not news — a
+     *        host wired to broadcast would otherwise re-announce every finished
+     *        node once per remaining node. `$onEvent` still sees everything;
+     *        only the dispatch is narrowed.
      */
     public function run(
         FlowGraph|ImportResult|string|array $flow,
@@ -96,6 +103,7 @@ final class FancyFlowManager
         ?string $runId = null,
         ?ExecutorRegistry $executors = null,
         bool $emitTerminalEvents = true,
+        ?array $eventNodes = null,
     ): RunResult {
         $graph = $this->toGraph($flow);
         $runId ??= self::newRunId();
@@ -105,7 +113,7 @@ final class FancyFlowManager
             initialInputs: $initialInputs,
         );
 
-        $result = (new FlowRunner())->run($graph, $executors ?? $this->executors, $this->bridge($runId, $onEvent), $options);
+        $result = (new FlowRunner())->run($graph, $executors ?? $this->executors, $this->bridge($runId, $onEvent, $eventNodes), $options);
 
         // The durable job owns its terminal events (a pause is not a failure), so
         // it opts out here and dispatches WorkflowFinished itself on completion.
@@ -246,16 +254,22 @@ final class FancyFlowManager
      * carry the full outputs, which the stream event does not).
      *
      * @param (callable(RunEvent):void)|null $onEvent
+     * @param list<string>|null              $eventNodes
      */
-    private function bridge(string $runId, ?callable $onEvent): Closure
+    private function bridge(string $runId, ?callable $onEvent, ?array $eventNodes = null): Closure
     {
         $dispatch = $this->eventsEnabled() ? $this->events : null;
 
-        return function (RunEvent $event) use ($runId, $onEvent, $dispatch): void {
+        return function (RunEvent $event) use ($runId, $onEvent, $dispatch, $eventNodes): void {
             if ($onEvent !== null) {
                 $onEvent($event);
             }
             if ($dispatch === null) {
+                return;
+            }
+            // Narrowed: the caller is replaying a graph to reconstruct one
+            // node's inputs, so only that node's events are new information.
+            if ($eventNodes !== null && ! in_array((string) $event->nodeId, $eventNodes, true)) {
                 return;
             }
             match ($event->type) {

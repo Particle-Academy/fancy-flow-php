@@ -8,6 +8,118 @@ upgrading.
 
 ---
 
+## 0.10.0
+
+### Added
+
+- **One queued job per NODE — the `per_node` queue driver.** A durable run was
+  one job for the whole graph, and `node_outputs` was written in exactly one
+  place: **after** `$flow->run()` returned. So the checkpoint only existed for
+  runs that ended by returning. The failure long workflows actually hit — a
+  worker killed by a timeout, a deploy, an OOM, a `SIGKILL` — never reached that
+  write at all, and the retry resumed from the *previous* checkpoint and re-ran
+  every node that had completed in the killed attempt. For nodes declaring
+  `sideEffects: unsafe-to-replay` (`git_pr_open`, `git_push`, `git_pull`,
+  `git_checkout`) that is not wasted work: it opens a second pull request.
+
+  Two more failures share that shape. A run outliving `queue.retry_after` was
+  released while still executing, so a second worker ran the same run
+  concurrently and every node ran twice. And with `queue.tries = 1` a single
+  transient node failure took the whole run down, because one setting covered an
+  entire graph.
+
+  The new driver splits a run into `AdvanceWorkflowJob` (work out what can run
+  now) and `RunNodeJob` (run exactly one node, checkpoint it, hand back):
+
+  ```php
+  // config/fancy-flow.php
+  'queue' => ['driver' => 'per_node'],
+  ```
+
+  - **A killed worker loses at most one node** — the one in flight. Every
+    completed node wrote its own output as it finished.
+  - **The claim is enforced by the database.** `(run_key, node_id)` is unique in
+    the new `workflow_run_nodes` table and claiming is an insert against that
+    constraint, so two workers computing the same node as ready is decided by
+    the database rather than by which one checked first. Losing the race is a
+    no-op, not an error.
+  - **Real fan-out.** Independent branches become separate jobs on separate
+    workers instead of a sequential walk inside one process.
+  - **Retries are per node.** A kind declaring `sideEffects: unsafe-to-replay`
+    gets exactly one attempt regardless of `queue.tries`; a flaky HTTP or LLM
+    node can be given several via `queue.node_tries` without putting its
+    neighbours at risk.
+  - **Bounded worker occupancy.** A twelve-hour workflow is no longer a
+    twelve-hour job.
+
+  `Engine\FlowRunner` is untouched — the parity fixtures are what prove it. The
+  driver does not reimplement the engine's routing either: it runs each node
+  *through* the engine with the completed nodes fed back as `resumeOutputs`, and
+  reads the activated ports off the engine's own `node-output` events.
+
+  **What you must DO: nothing.** `queue.driver` defaults to `single` — the
+  existing behaviour, unchanged — so upgrading changes how nothing runs. Switch
+  when you want the durability, and run the new migration first
+  (`php artisan migrate`; re-publish with `--tag=fancy-flow-migrations` if you
+  vendored them). A run parked mid-flight under `single` adopts its existing
+  `node_outputs` checkpoint when it resumes on `per_node`, so switching does not
+  replay what already ran.
+
+- **`NodeKind::$sideEffects`** — `none` | `idempotent` | `unsafe-to-replay`, the
+  same vocabulary a node package already declares in its manifest, lifted onto
+  the kind so it is readable from the registry without loading one. Declarable
+  through `#[FlowNode(sideEffects: 'unsafe-to-replay')]`, a config kind, or a
+  kind manifest. This is what the per-node driver reads to pin a node to a
+  single attempt; nothing else consults it, and an undeclared kind behaves
+  exactly as before.
+
+- **`queue.drain_limit`** — one `RunNodeJob` may keep going inline while the
+  next step is unambiguous (exactly one ready successor, single-attempt, no
+  human wait, not `unsafe-to-replay`), collapsing a chain of fast nodes back
+  into one job. Fan-out always dispatches, so parallelism is never traded away.
+  **Off by default** (`0`): it trades a little of the durability the driver
+  exists to provide for latency, and that should be chosen rather than
+  inherited.
+
+- **`WorkflowRun::nodes()`** — the per-node rows, each with status, output,
+  activated ports, attempt count, and timings. Empty under `single`.
+
+### Changed
+
+- **BREAKING (`per_node` only): `WorkflowSettled` is per RUN, not per attempt.**
+  Under `single` it fires once per in-process attempt, in a `finally` — a job
+  that throws and is retried emits one per attempt. Under `per_node` an
+  "attempt" no longer exists at run scope, so it fires when the RUN settles:
+  completed, failed, skipped, or parked on a human. It still pairs with
+  `WorkflowStarted`, which fires when the run starts and again when it resumes
+  from a pause.
+
+  **What you must DO:** nothing unless you both switch to `per_node` *and* bind
+  per-attempt state to `WorkflowSettled`. If you do, that binding now has a
+  run-shaped lifetime rather than a job-shaped one — which is usually what was
+  wanted anyway.
+
+- **BREAKING (`per_node` only): `RunEvent`-derived events no longer arrive in
+  topological order.** One process walking a graph produced a total order for
+  free. Under fan-out, `NodeStatusChanged` / `NodeOutput` from independent
+  branches interleave. Saying so rather than pretending otherwise: if you were
+  relying on arrival order to reconstruct the graph, use the edges.
+
+  **What you must DO:** nothing on `single`. On `per_node`, order by the node,
+  not by the event.
+
+- **BREAKING (`per_node` only): `fancy-flow.timeout_ms` is checked between
+  nodes by the driver, not inside a single engine run.** It still bounds the
+  whole run — measured from the first node claim — and, exactly as the engine
+  does, it does not interrupt a node already executing.
+
+  **What you must DO:** nothing. The meaning is the same; only the place it is
+  enforced moved.
+
+- The cohort `TriggerGuard` is re-checked once, when a run starts, rather than
+  before every node. Re-asking it mid-run would let a change of state skip a
+  half-executed workflow, which is worse than either answer.
+
 ## 0.9.1
 
 ### Changed

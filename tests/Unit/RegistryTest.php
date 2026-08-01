@@ -93,6 +93,25 @@ it('exposes a resettable shared default registry', function () {
     expect(NodeKindRegistry::default()->has('temp'))->toBeFalse();
 });
 
+it('carries a kind\'s declared side effects, and leaves them absent when undeclared', function () {
+    // The declaration a durable driver reads to decide whether a node may be
+    // attempted twice. Round-tripping matters because it travels through the
+    // shared kind manifest, and a field that survives import but vanishes on
+    // export is a retry policy that silently stops applying.
+    $unsafe = NodeKind::fromArray([
+        'name' => 'git_pr_open', 'category' => 'io', 'label' => 'Open PR',
+        'sideEffects' => 'unsafe-to-replay',
+    ]);
+
+    expect($unsafe->sideEffects)->toBe('unsafe-to-replay');
+    expect($unsafe->toArray()['sideEffects'])->toBe('unsafe-to-replay');
+    expect(NodeKind::fromArray($unsafe->toArray())->sideEffects)->toBe('unsafe-to-replay');
+
+    $plain = NodeKind::fromArray(['name' => 'transform', 'category' => 'logic', 'label' => 'T']);
+    expect($plain->sideEffects)->toBeNull();
+    expect($plain->toArray())->not->toHaveKey('sideEffects');
+});
+
 it('maps category accents', function () {
     expect(NodeKindRegistry::categoryAccent('trigger'))->toBe('#10b981');
     expect(NodeKindRegistry::categoryAccent('unknown-cat'))->toBe('#71717a');

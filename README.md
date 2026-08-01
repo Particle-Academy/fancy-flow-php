@@ -320,6 +320,58 @@ Route::flow('/hooks/onboard', $schema);          // POST → dispatch a durable 
 class Project extends Model { use HasWorkflows; } // $project->workflows()
 ```
 
+#### One job per node
+
+A run is carried on the queue by one of two drivers, selected with
+`fancy-flow.queue.driver`:
+
+| | `single` (default) | `per_node` |
+|---|---|---|
+| Jobs per run | 1 | 1 per node, plus a bookkeeping job between them |
+| Checkpoint written | once, when the graph returns | as each node finishes |
+| Worker killed mid-run | re-runs every node completed since the last checkpoint | loses at most the node that was in flight |
+| Independent branches | sequential, in one process | parallel, on separate workers |
+| `tries` | one setting for the whole graph | per node |
+
+`single` is what shipped through 0.9 and remains the default, so upgrading
+changes nothing. The reason to switch is that a checkpoint written *after* the
+whole graph returns is not written at all when the worker is killed — a timeout,
+a deploy, an OOM — and the retry then re-runs everything that had completed,
+including nodes that must not run twice:
+
+```php
+// config/fancy-flow.php
+'queue' => ['driver' => 'per_node'],
+```
+
+It needs the `workflow_run_nodes` migration. `(run_key, node_id)` is unique
+there, and claiming a node is an insert against that constraint — so two workers
+computing the same node as ready is settled by the database, and the loser does
+nothing rather than executing a second time.
+
+Retries become a per-node question, which is where they belonged. A kind
+declaring `sideEffects: 'unsafe-to-replay'` gets exactly one attempt no matter
+what `tries` says; anything flaky can be given several without putting its
+neighbours at risk:
+
+```php
+#[FlowNode('git_pr_open', category: 'io', label: 'Open PR', sideEffects: 'unsafe-to-replay')]
+final class OpenPullRequestExecutor implements NodeExecutor { /* … */ }
+
+// config/fancy-flow.php
+'queue' => ['driver' => 'per_node', 'tries' => 1, 'node_tries' => ['api_request' => 3]],
+```
+
+A queue round trip per node is real overhead, and for a chain of fast nodes it is
+most of the cost. `queue.drain_limit` lets one job keep going inline while the
+next step is unambiguous — a single ready successor, single-attempt, no human
+wait. Fan-out always dispatches, so parallelism is never traded away. It is off
+by default, because it trades a little of the durability the driver exists to
+provide.
+
+Per-node state is queryable: `$run->nodes()` returns a row per node with its
+status, output, activated ports, and attempt count.
+
 ### One trigger, several workflows
 
 When a single event fires more than one workflow, dispatch them **together**:
@@ -404,8 +456,16 @@ composer test
   capability seam with shipped, auto-detected Prism + laravel/ai adapters,
   the `llm_router` and `subflow` built-ins, and canonical `@particle-academy/<name>`
   kind ids with aliases (parity with fancy-flow 0.12.0).
-- **0.6 — Human+** *(next)* — broadcast run status over Reverb so `<FlowEditor>`
-  shows a server run live; MCP bridge so an agent can trigger + watch server runs.
+- **0.6–0.8 — Human+, marketplace, discovery** ✅ — the node marketplace and its
+  manifest, `#[FlowNode]` discovery, and the public pause contract that lets a
+  third-party node declare its own human wait.
+- **0.9 — trigger cohorts** ✅ — `dispatchCohort()`, `TriggerGuard`, and the
+  `skipped` status, so the runs one event fires are ordered and guarded instead
+  of racing each other over shared state.
+- **0.10 — one job per node** ✅ — the `per_node` queue driver: a job per node,
+  a database-enforced claim, a checkpoint written as each node finishes, real
+  fan-out across workers, and retries declared per node so an
+  `unsafe-to-replay` node is never attempted twice.
 
 ## License
 

@@ -29,6 +29,10 @@ final class FlowNode
      * @param list<string> $aliases previous ids this kind still answers to. `name` is
      *        CANONICAL and is what lands in saved graphs, so publish namespaced
      *        (`@acme/salesforce_upsert`) and keep the old bare name here.
+     * @param string|null $sideEffects `none` | `idempotent` | `unsafe-to-replay` — what a
+     *        SECOND attempt at this node costs. Durable runs retry; declaring
+     *        `unsafe-to-replay` is what pins the node to a single attempt under the
+     *        per-node queue driver instead of opening a second pull request.
      */
     public function __construct(
         public readonly string $name,
@@ -40,6 +44,7 @@ final class FlowNode
         public readonly ?array $inputs = null,
         public readonly ?array $outputs = null,
         public readonly array $aliases = [],
+        public readonly ?string $sideEffects = null,
     ) {}
 
     /**
@@ -77,6 +82,9 @@ final class FlowNode
         }
         if ($this->aliases !== []) {
             $kind['aliases'] = $this->aliases;
+        }
+        if ($this->sideEffects !== null) {
+            $kind['sideEffects'] = $this->sideEffects;
         }
 
         return $kind;

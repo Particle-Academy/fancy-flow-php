@@ -8,6 +8,7 @@ use FancyFlow\Laravel\Jobs\RunWorkflowJob;
 use FancyFlow\NodeKindRegistry;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * One execution of a workflow. Self-contained (stores its own schema + inputs)
@@ -79,6 +80,18 @@ class WorkflowRun extends Model
     public function workflow(): BelongsTo
     {
         return $this->belongsTo(Workflow::class);
+    }
+
+    /**
+     * The per-node claims + checkpoints, under the `per_node` queue driver.
+     *
+     * Empty under `single`, which keeps its whole checkpoint in `node_outputs`.
+     * Where rows exist they are the authority: `node_outputs` is derived from
+     * them so existing host code keeps reading what it always read.
+     */
+    public function nodes(): HasMany
+    {
+        return $this->hasMany(WorkflowRunNode::class, 'run_key', 'run_key');
     }
 
     public function isTerminal(): bool

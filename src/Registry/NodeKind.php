@@ -45,6 +45,18 @@ final class NodeKind
          * needs a resume path before the first run parks itself forever.
          */
         public readonly ?string $pausesForHuman = null,
+        /**
+         * What re-running this node costs — `none`, `idempotent`, or
+         * `unsafe-to-replay`. The same vocabulary a node package declares in its
+         * {@see \FancyFlow\Marketplace\NodeManifest}, lifted onto the kind so it
+         * is readable from the registry without loading a manifest.
+         *
+         * A durable run RETRIES. `unsafe-to-replay` is the node saying a second
+         * attempt is not a repeat of the first — `git_pr_open` opens a second
+         * pull request. The per-node queue driver reads this and pins such a
+         * node to a single attempt; nothing else in the engine consults it.
+         */
+        public readonly ?string $sideEffects = null,
     ) {}
 
     /**
@@ -89,6 +101,7 @@ final class NodeKind
                 is_array($raw['aliases'] ?? null) ? $raw['aliases'] : [],
             )),
             pausesForHuman: isset($raw['pausesForHuman']) ? (string) $raw['pausesForHuman'] : null,
+            sideEffects: isset($raw['sideEffects']) ? (string) $raw['sideEffects'] : null,
         );
     }
 
@@ -138,6 +151,9 @@ final class NodeKind
         }
         if ($this->pausesForHuman !== null) {
             $out['pausesForHuman'] = $this->pausesForHuman;
+        }
+        if ($this->sideEffects !== null) {
+            $out['sideEffects'] = $this->sideEffects;
         }
 
         return $out;

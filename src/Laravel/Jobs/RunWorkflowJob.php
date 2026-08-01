@@ -9,8 +9,7 @@ use FancyFlow\Laravel\Events\WorkflowFinished;
 use FancyFlow\Laravel\Events\WorkflowSettled;
 use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
-use FancyFlow\Laravel\Nodes\DurableApprovalExecutor;
-use FancyFlow\Laravel\Nodes\DurableUserInputExecutor;
+use FancyFlow\Laravel\Runs\RunSetup;
 use FancyFlow\Laravel\TriggerCohort;
 use FancyFlow\Runtime\Pause;
 use FancyFlow\Runtime\RunOptions;
@@ -23,7 +22,22 @@ use Illuminate\Queue\SerializesModels;
 use Throwable;
 
 /**
- * Runs a {@see WorkflowRun} on a queue, durably:
+ * Runs a {@see WorkflowRun} on a queue, durably — the `single` queue driver:
+ * one job for the whole graph.
+ *
+ * **This is one of two drivers.** `fancy-flow.queue.driver` selects between:
+ *
+ *   - `single` (default) — this job. The whole graph runs in one `handle()`,
+ *     and the `node_outputs` checkpoint is written once, when it returns.
+ *   - `per_node` — {@see AdvanceWorkflowJob} + {@see RunNodeJob}. A job per
+ *     node, each checkpointing its own result, so a worker killed mid-run loses
+ *     at most the node that was in flight rather than everything completed since
+ *     the last whole-graph write.
+ *
+ * {@see enqueue()} routes to the configured driver, so hosts calling it — and
+ * everything in this package does — keep working either way.
+ *
+ * What this driver does:
  *
  *   - **Resume** — feeds the run's `node_outputs` checkpoint as
  *     {@see RunOptions::$resumeOutputs}, so a retry skips already-completed
@@ -59,10 +73,30 @@ final class RunWorkflowJob implements ShouldQueue
         $this->onQueue((string) config('fancy-flow.queue.queue', 'default'));
     }
 
-    /** Dispatch this job for a run, honoring the configured connection + queue. */
+    /**
+     * Start (or resume) a run on the configured driver.
+     *
+     * The single entry point every caller in this package already uses —
+     * `FancyFlow::dispatch()`, `dispatchCohort()`, `TriggerCohort::advance()`,
+     * `WorkflowRun::approve()` / `submitInput()`. Routing here rather than at
+     * each of those is what lets `queue.driver` be a config change instead of a
+     * migration of every call site, including the ones in host code.
+     */
     public static function enqueue(WorkflowRun $run): void
     {
+        if (self::perNode()) {
+            AdvanceWorkflowJob::dispatch($run->run_key);
+
+            return;
+        }
+
         self::dispatch($run->run_key);
+    }
+
+    /** Is the per-node driver selected? */
+    public static function perNode(): bool
+    {
+        return config('fancy-flow.queue.driver', 'single') === 'per_node';
     }
 
     public function backoff(): int
@@ -127,25 +161,15 @@ final class RunWorkflowJob implements ShouldQueue
 
         $run->forceFill(['status' => WorkflowRun::RUNNING, 'attempts' => $run->attempts + 1])->save();
 
-        // Merge recorded approval decisions into the entry inputs for their nodes.
-        $initial = $run->initial_inputs ?? [];
-        foreach ($run->approvals ?? [] as $nodeId => $approved) {
-            $initial[$nodeId] = array_merge($initial[$nodeId] ?? [], ['approved' => $approved]);
-        }
-
-        // …and recorded form submissions, which resume a paused `user_input`.
-        foreach ($run->submissions ?? [] as $nodeId => $values) {
-            $initial[$nodeId] = array_merge($initial[$nodeId] ?? [], ['values' => $values]);
-        }
-
-        $executors = $flow->executors()->fork()
-            ->bind('human_approval', DurableApprovalExecutor::class)
-            ->bind('user_input', DurableUserInputExecutor::class);
+        // Recorded approvals and form submissions become the entry inputs their
+        // nodes read on resume. Shared with the per-node driver so the two can
+        // never disagree about what "resumed" means.
         $options = new RunOptions(
             timeoutMs: config('fancy-flow.timeout_ms'),
-            initialInputs: $initial,
+            initialInputs: RunSetup::initialInputs($run),
             resumeOutputs: $run->node_outputs ?? [],
         );
+        $executors = RunSetup::executors($flow);
 
         $result = $flow->run(
             $run->schema,
