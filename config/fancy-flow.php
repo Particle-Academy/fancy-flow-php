@@ -103,7 +103,7 @@ return [
     | "per_node" needs the workflow_run_nodes migration.
     */
     'queue' => [
-        'driver' => env('FANCY_FLOW_QUEUE_DRIVER', 'single'),
+        'driver' => env('FANCY_FLOW_QUEUE_DRIVER', 'per_node'),
         'connection' => env('FANCY_FLOW_QUEUE_CONNECTION'),
         'queue' => env('FANCY_FLOW_QUEUE', 'default'),
 

@@ -198,14 +198,29 @@ it('checkpoints each node as it finishes, not once when the graph returns', func
     expect($row->completed_at)->not->toBeNull();
 });
 
-it('ships with the single-job driver as the default', function () {
-    // The upgrade promise: nothing changes for an existing host until it asks
-    // for the new driver. Asserted against the SHIPPED config, not the test
-    // environment's override.
+it('ships with one job per node as the default', function () {
+    // 0.10 shipped this driver behind a flag that defaulted to `single`, which
+    // meant an upgrade changed nothing: the durability defect stayed live for
+    // everyone who did not know to opt in. A fix nobody receives is not a fix.
+    //
+    // Asserted against the SHIPPED config, not the test environment's override,
+    // because that is the file a consumer actually gets.
     $shipped = require dirname(__DIR__, 2).'/config/fancy-flow.php';
 
-    expect($shipped['queue']['driver'])->toBe('single');
+    expect($shipped['queue']['driver'])->toBe('per_node');
+
+    // Drain stays OFF by default. It trades the per-node durability this whole
+    // driver exists for against latency on short graphs, so it is opt-in even
+    // now that the driver is not.
     expect($shipped['queue']['drain_limit'])->toBe(0);
+});
+
+it('still lets a host pin the single-job driver', function () {
+    // The escape hatch has to keep working, or flipping the default is a
+    // one-way door for anyone it surprises.
+    config()->set('fancy-flow.queue.driver', 'single');
+
+    expect(config('fancy-flow.queue.driver'))->toBe('single');
 });
 
 it('leaves the single-job driver completely alone', function () {
