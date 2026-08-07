@@ -27,12 +27,36 @@ final class DurableApprovalExecutor implements NodeExecutor
      */
     public const PAUSE_PREFIX = 'awaiting-approval:';
 
+    /**
+     * @param  array<string,bool>  $approvals  Decisions this run has actually
+     *   recorded, keyed by node id. Membership — not the presence of data on the
+     *   `approved` port — is what decides whether a person has ruled on it.
+     */
+    public function __construct(private readonly array $approvals = []) {}
+
     public function execute(ExecutionContext $ctx): mixed
     {
-        $decision = $ctx->inputs['approved'] ?? null;
+        // An approval gate pauses because it IS an approval gate. See the note
+        // in DurableUserInputExecutor: reading the decision off the input port
+        // meant anything that pre-filled that port — initial inputs, an upstream
+        // edge, or a decision recorded before the node ran — counted as a human
+        // having approved, and the run sailed through the gate.
+        $nodeId = $ctx->node->id;
 
-        if ($decision === null) {
-            $ctx->pauseForHuman('approval');
+        if (array_key_exists($nodeId, $this->approvals)) {
+            $decision = $this->approvals[$nodeId];
+        } else {
+            // Opt-in, off by default — see the note in DurableUserInputExecutor.
+            // Worth weighing harder here than for a form: this one lets an
+            // upstream node approve on a person's behalf, so turning it on means
+            // the graph, not a human, is the approver.
+            $prefilled = $ctx->inputs['approved'] ?? null;
+
+            if ($ctx->option('autoAnswerFromInput', false) === true && $prefilled !== null) {
+                $decision = $prefilled;
+            } else {
+                $ctx->pauseForHuman('approval');
+            }
         }
 
         return Port::branch($decision ? 'approved' : 'denied', $ctx->input('in', $ctx->inputs));

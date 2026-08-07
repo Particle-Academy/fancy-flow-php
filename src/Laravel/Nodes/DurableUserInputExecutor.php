@@ -30,17 +30,57 @@ final class DurableUserInputExecutor implements NodeExecutor
      */
     public const PAUSE_PREFIX = 'awaiting-input:';
 
+    /**
+     * @param  array<string,array<string,mixed>>  $submissions  Answers this run has
+     *   actually recorded, keyed by node id. Membership — not the presence of
+     *   data on the `values` port — is what decides whether the node has been
+     *   answered.
+     */
+    public function __construct(private readonly array $submissions = []) {}
+
     public function execute(ExecutionContext $ctx): mixed
     {
-        // Strict null check, not truthiness: an empty form ([]) is a real
-        // submission and must resume, not pause again.
-        $values = $ctx->inputs['values'] ?? null;
+        // A human node pauses because it IS a human node, not because its input
+        // port happens to be empty.
+        //
+        // This used to read `$ctx->inputs['values']` and pause only when that
+        // was null, which conflated two different questions: "has a person
+        // answered this?" and "is there data on the values port?". Anything that
+        // pre-filled the port — initial inputs, an upstream edge, or a
+        // submission recorded before the node ever ran — answered the second
+        // question and silently skipped the gate. On the per_node driver a host
+        // frontend posting an empty submit could win that race against the
+        // queued run, so the step a person was meant to see never appeared and
+        // downstream nodes ran on empty input.
+        //
+        // Now the only thing that resumes this node is a recorded submission for
+        // THIS node. Pre-filled inputs never satisfy it.
+        $nodeId = $ctx->node->id;
 
-        if ($values === null) {
+        if (! array_key_exists($nodeId, $this->submissions)) {
+            // Opt-in escape hatch, off by default: let a value already on the
+            // `values` port stand in for the person. This is the old behaviour,
+            // and it is genuinely wanted for a step that is a human form when a
+            // human is present and a pass-through when an upstream node already
+            // computed the answer.
+            //
+            // It is a config flag rather than the default because it cannot be
+            // told apart from the failure it used to cause. Naming it puts the
+            // decision in the graph, where it is reviewable, instead of leaving
+            // it as an emergent property of whatever happened to write to a port.
+            $prefilled = $ctx->inputs['values'] ?? null;
+
+            if ($ctx->option('autoAnswerFromInput', false) === true && $prefilled !== null) {
+                return $prefilled;
+            }
+
             $ctx->pauseForHuman('input', $this->formDetail($ctx));
         }
 
-        return $values;
+        // An empty form ([]) is a real answer — it resumes rather than pausing
+        // again. That distinction survives because it is now carried by whether
+        // the key exists, not by whether the value is null.
+        return $this->submissions[$nodeId];
     }
 
     /**

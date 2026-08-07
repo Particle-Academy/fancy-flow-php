@@ -169,7 +169,7 @@ final class RunWorkflowJob implements ShouldQueue
             initialInputs: RunSetup::initialInputs($run),
             resumeOutputs: $run->node_outputs ?? [],
         );
-        $executors = RunSetup::executors($flow);
+        $executors = RunSetup::executors($flow, $run);
 
         $result = $flow->run(
             $run->schema,

@@ -428,3 +428,104 @@ it('leaves kinds that never wait unmarked', function (string $kind) {
     // The declaration is only useful if it is accurate.
     expect(app(\FancyFlow\NodeKindRegistry::class)->get($kind)?->pausesForHuman)->toBeNull();
 })->with(['transform', 'branch', 'output']);
+
+// ── the human gate cannot be pre-filled away (issue #3) ─────────────────────
+
+it('pauses a user_input node even when its values input is pre-filled', function () {
+    // The reported failure. A value present on the `values` port used to answer
+    // the question "has a person filled this in?", so anything that pre-filled
+    // it skipped the form entirely and downstream nodes ran on that value. On
+    // the per_node driver a host frontend posting an empty submit could win that
+    // race against the queued run, so the step a person was meant to see never
+    // appeared.
+    $schema = dschema(
+        [dnode('t', 'manual_trigger'), dnode('form', 'user_input'), dnode('o', 'output')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form'], ['id' => 'e2', 'source' => 'form', 'target' => 'o']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => [], 'form' => ['values' => ['note' => 'pre-filled']]]);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+    expect($run->awaiting_node)->toBe('form');
+
+    // And the person's answer wins over what was sitting on the port.
+    $run->submitInput(values: ['note' => 'typed by a human']);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect($run->outputs['form'])->toBe(['note' => 'typed by a human']);
+});
+
+it('pauses a human_approval node even when its approved input is pre-filled', function () {
+    // The same hole on the approval gate, which is the worse of the two: an
+    // upstream value used to count as a person having approved.
+    $schema = dschema(
+        [dnode('t', 'manual_trigger'), dnode('gate', 'human_approval'), dnode('yes', 'output')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'gate'],
+            ['id' => 'e2', 'source' => 'gate', 'target' => 'yes', 'sourceHandle' => 'approved']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => [], 'gate' => ['approved' => true]]);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_APPROVAL);
+    expect($run->awaiting_node)->toBe('gate');
+});
+
+it('lets a node opt in to being answered by its input, when asked to', function () {
+    // autoAnswerFromInput restores the old behaviour deliberately, for a step
+    // that is a form when a person is present and a pass-through when an
+    // upstream node already computed the answer.
+    $schema = dschema(
+        [dnode('t', 'manual_trigger'),
+            dnode('form', 'user_input', ['autoAnswerFromInput' => true]),
+            dnode('o', 'output')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form'], ['id' => 'e2', 'source' => 'form', 'target' => 'o']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => [], 'form' => ['values' => ['note' => 'from upstream']]]);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect($run->outputs['form'])->toBe(['note' => 'from upstream']);
+});
+
+it('still pauses with the opt-in on when nothing pre-filled the port', function () {
+    $schema = dschema(
+        [dnode('t', 'manual_trigger'), dnode('form', 'user_input', ['autoAnswerFromInput' => true])],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+});
+
+it('refuses an answer for a node the run is not parked on', function () {
+    // The write-side half. A recorded answer is what resumes a human node, so
+    // recording one before the node pauses is how a stale value reached it in
+    // the first place. Throwing beats ignoring: a submission that silently
+    // vanishes is the mirror-image bug.
+    $schema = dschema(
+        [dnode('t', 'manual_trigger'), dnode('form', 'user_input')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+
+    // Wrong node — the run is parked on 'form', not 'other'.
+    expect(fn () => $run->submitInput('other', ['x' => 1]))
+        ->toThrow(\FancyFlow\Exceptions\NotAwaitingHuman::class);
+
+    // Right node, but the run has already moved on.
+    $run->submitInput(values: ['ok' => true]);
+    $run->refresh();
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+
+    expect(fn () => $run->submitInput('form', ['again' => true]))
+        ->toThrow(\FancyFlow\Exceptions\NotAwaitingHuman::class);
+});

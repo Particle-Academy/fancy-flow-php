@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FancyFlow\Laravel\Models;
 
+use FancyFlow\Exceptions\NotAwaitingHuman;
 use FancyFlow\Laravel\Jobs\RunWorkflowJob;
 use FancyFlow\NodeKindRegistry;
 use Illuminate\Database\Eloquent\Model;
@@ -159,7 +160,7 @@ class WorkflowRun extends Model
      */
     public function submitInput(?string $nodeId = null, array $values = []): static
     {
-        $node = $nodeId ?? (string) $this->awaiting_node;
+        $node = $this->assertParkedOn($nodeId);
 
         $submissions = $this->submissions ?? [];
         $submissions[$node] = $values;
@@ -221,17 +222,49 @@ class WorkflowRun extends Model
     /** Approve the paused node and resume the run. */
     public function approve(?string $nodeId = null): static
     {
-        return $this->decide($nodeId ?? (string) $this->awaiting_node, true);
+        return $this->decide($nodeId, true);
     }
 
     /** Deny the paused node and resume the run (routes down the `denied` branch). */
     public function deny(?string $nodeId = null): static
     {
-        return $this->decide($nodeId ?? (string) $this->awaiting_node, false);
+        return $this->decide($nodeId, false);
     }
 
-    private function decide(string $nodeId, bool $approved): static
+    /**
+     * The node this run is parked on, or a loud failure.
+     *
+     * A human answer is an answer to a question the run actually asked. Nothing
+     * used to check that: an answer could be recorded for any node at any time,
+     * and because a recorded answer is what resumes a human node, one stored
+     * before the node ran would resume a step that had never paused. On the
+     * per_node driver a host frontend could win that race against the queued
+     * run, skipping the gate entirely.
+     *
+     * Throwing beats ignoring. A submission that silently vanishes is the
+     * mirror-image bug — a person fills the form and nothing happens.
+     */
+    private function assertParkedOn(?string $nodeId): string
     {
+        $awaiting = $this->awaiting_node === null ? '' : (string) $this->awaiting_node;
+        $target = $nodeId ?? $awaiting;
+
+        if (! $this->isAwaitingHuman() || $target === '' || $target !== $awaiting) {
+            throw NotAwaitingHuman::for(
+                (string) $this->run_key,
+                $nodeId,
+                (string) $this->status,
+                $this->awaiting_node === null ? null : (string) $this->awaiting_node,
+            );
+        }
+
+        return $target;
+    }
+
+    private function decide(?string $nodeId, bool $approved): static
+    {
+        $nodeId = $this->assertParkedOn($nodeId);
+
         $approvals = $this->approvals ?? [];
         $approvals[$nodeId] = $approved;
         $this->forceFill([

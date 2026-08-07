@@ -181,7 +181,7 @@ final class RunNodeJob implements ShouldQueue
             $flow,
             $graph,
             nodeId: $nodeId,
-            executors: RunSetup::executors($flow),
+            executors: RunSetup::executors($flow, $run),
             options: new RunOptions(
                 // No engine timeout here: it is checked between nodes, and there
                 // is only ever one node in this run. The run-level deadline is

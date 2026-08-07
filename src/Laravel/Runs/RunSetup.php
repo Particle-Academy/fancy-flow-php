@@ -31,6 +31,17 @@ final class RunSetup
      */
     public static function initialInputs(WorkflowRun $run): array
     {
+        // Answers are still merged onto the node's `approved` / `values` ports,
+        // because that is the only resume channel a THIRD-PARTY pausing node
+        // has: a marketplace kind that calls `pauseForHuman()` reads its answer
+        // off its input port, and this package cannot reach inside its executor.
+        //
+        // What changed is that our own two human executors no longer consult
+        // these ports at all — they resume on membership in the run's recorded
+        // answers (see executors()). So this merge can no longer skip an
+        // `human_approval` or `user_input` gate, which is what it used to do
+        // whenever anything pre-filled the port: a host's own `initial_inputs`,
+        // an upstream edge, or a submission recorded before the node ever ran.
         $initial = $run->initial_inputs ?? [];
 
         foreach ($run->approvals ?? [] as $nodeId => $approved) {
@@ -51,10 +62,14 @@ final class RunSetup
      * and the shared registry keeps serving synchronous `FancyFlow::run()` calls
      * that have no run row to park against.
      */
-    public static function executors(FancyFlowManager $flow): ExecutorRegistry
+    public static function executors(FancyFlowManager $flow, ?WorkflowRun $run = null): ExecutorRegistry
     {
+        // Instances, not class strings: each carries the answers THIS run has
+        // recorded, which is what the executors now check instead of reading
+        // their input ports. A null run means no answers yet, so every human
+        // node pauses — the correct behaviour for a fresh run.
         return $flow->executors()->fork()
-            ->bind('human_approval', DurableApprovalExecutor::class)
-            ->bind('user_input', DurableUserInputExecutor::class);
+            ->bind('human_approval', new DurableApprovalExecutor($run?->approvals ?? []))
+            ->bind('user_input', new DurableUserInputExecutor($run?->submissions ?? []));
     }
 }

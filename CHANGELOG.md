@@ -8,6 +8,79 @@ upgrading.
 
 ---
 
+## 0.13.0 — 2026-08-07
+
+### Fixed
+
+- **A human gate could be skipped entirely, running the flow past the person it
+  was waiting for.** `user_input` and `human_approval` decided whether to pause
+  by reading their own input port — `values` / `approved` — and paused only when
+  it was `null`. That conflated two different questions: *has a person answered
+  this?* and *is there data on this port?* Anything that put a value there
+  answered the second and skipped the gate: the host's own `initial_inputs`, an
+  upstream edge, or an answer recorded before the node ever ran.
+
+  On the `per_node` driver this was reachable in production. A host frontend
+  posting an empty submit could win the race against the queued run, so a
+  submission existed before the node executed, the executor saw a non-null
+  `values`, and the form a person was meant to fill never appeared — downstream
+  nodes then ran on empty input. On `single` the run executes inline and reaches
+  the node first, which is why the same graph always paused there. Reported in
+  #3, with the race narrowed by the reporter.
+
+  **A human node now pauses because it is a human node.** Resumption is decided
+  by whether the run has a recorded answer for that node, never by what is on
+  the port. Pre-filled inputs cannot satisfy it.
+
+- **An answer could be recorded for a node the run was not parked on.**
+  `submitInput()`, `approve()` and `deny()` wrote to `submissions` / `approvals`
+  for any node id at any time, then re-queued the run — which is how a stale
+  answer got in front of a node in the first place. They now throw
+  `NotAwaitingHuman` unless the run is actually parked on that node.
+
+  Throwing rather than ignoring is deliberate: a submission that silently
+  vanishes is the mirror-image bug, where a person fills in a form and nothing
+  happens.
+
+  Also fixes `approve()` / `deny()` coercing a null `awaiting_node` to `""` and
+  recording an answer under an empty key.
+
+### Added
+
+- **`autoAnswerFromInput`** on `user_input` and `human_approval` — off by
+  default. Turning it on restores the old behaviour deliberately: a value
+  already on the port answers on the person's behalf and the node does not
+  pause. Wanted for a step that is a form when a human is present and a
+  pass-through when an upstream node already computed the answer.
+
+  It is a config flag rather than the default because the old behaviour cannot
+  be told apart from the failure it caused. Naming it puts the decision in the
+  graph, where it is reviewable. Weigh it harder on `human_approval`: turning it
+  on there means the graph, not a person, is the approver.
+
+### Changed
+
+- **BREAKING (behaviour) — a pre-filled `values` / `approved` port no longer
+  resumes a human node.**
+
+  **What you must do:** if you relied on that — passing a human node's answer in
+  through `initial_inputs` or an upstream edge — set `autoAnswerFromInput: true`
+  on that node and behaviour is unchanged. If you did not, nothing to do, and a
+  gate that used to be skippable no longer is.
+
+- **BREAKING (behaviour) — recording an answer for a node the run is not parked
+  on now throws.**
+
+  **What you must do:** submit only while the run is parked on that node
+  (`isAwaitingHuman()` / `awaiting_node`). A host that fires a submit
+  speculatively — before the run has paused — must stop; that pattern is what
+  skipped the gate. Catch `FancyFlow\Exceptions\NotAwaitingHuman` if a
+  double-submit is reachable from your UI.
+
+Third-party pausing nodes are unaffected: recorded answers are still merged onto
+their input ports, because that is the only resume channel a marketplace kind
+calling `pauseForHuman()` has.
+
 ## 0.12.0 — 2026-08-07
 
 ### Changed

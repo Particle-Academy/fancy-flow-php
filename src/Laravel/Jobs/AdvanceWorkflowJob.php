@@ -216,7 +216,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
             $flow,
             $graph,
             nodeId: null,
-            executors: RunSetup::executors($flow),
+            executors: RunSetup::executors($flow, $run),
             options: new RunOptions(
                 initialInputs: RunSetup::initialInputs($run),
                 resumeOutputs: $checkpoint,

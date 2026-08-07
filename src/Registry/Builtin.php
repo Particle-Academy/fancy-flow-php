@@ -236,6 +236,8 @@ final class Builtin
                     ['type' => 'text', 'key' => 'title', 'label' => 'Form title', 'default' => 'Need your input'],
                     ['type' => 'json', 'key' => 'fields', 'label' => 'Fields (JSON)', 'language' => 'json', 'rows' => 6,
                         'default' => [['key' => 'answer', 'label' => 'Your answer', 'type' => 'textarea']]],
+                    ['type' => 'switch', 'key' => 'autoAnswerFromInput', 'label' => 'Let an incoming value answer this', 'default' => false,
+                        'description' => 'Off by default: this node pauses for a person even when something already put a value on its input. Turn it on for a step that is a form when a human is present and a pass-through when an upstream node already produced the answer.'],
                 ],
             ],
 
@@ -467,6 +469,8 @@ final class Builtin
                     ['type' => 'text', 'key' => 'title', 'label' => 'Approval title', 'default' => 'Approve action'],
                     ['type' => 'textarea', 'key' => 'description', 'label' => 'Description for approver', 'rows' => 3],
                     ['type' => 'credential', 'key' => 'channel', 'label' => 'Notify channel', 'credentialType' => 'notify_channel'],
+                    ['type' => 'switch', 'key' => 'autoAnswerFromInput', 'label' => 'Let an incoming value approve this', 'default' => false,
+                        'description' => 'Off by default. Turning it on means the graph, not a person, can approve — an upstream value on the approved port decides and the gate never pauses. Weigh this harder than on a form.'],
                 ],
             ],
             [

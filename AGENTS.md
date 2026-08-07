@@ -83,7 +83,7 @@ silently:
 
 ## Conventions
 
-- **PHP 8.3 floor.** Immutable value objects, named-arg constructors, `match`.
+- **PHP 8.4 floor.** Immutable value objects, named-arg constructors, `match`.
 - **No new runtime dependencies** in the core. Injectable clients over hard deps.
 - **Faithfulness first.** If in doubt, match `run-flow.ts` semantics and add a
   parity fixture. Where the PHP twin intentionally differs from the TS *code*
