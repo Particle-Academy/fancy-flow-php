@@ -8,6 +8,31 @@ upgrading.
 
 ---
 
+## 0.14.0 — 2026-08-07
+
+### Added
+
+- **`FancyFlow\Laravel\LiveContract`** — the PHP half of `flowLive` in
+  `@particle-academy/fancy-flow`. Declares which events describe a run's durable
+  state and which client query keys each invalidates. A parity test on each side
+  asserts the two lists match.
+
+  It covers a run, **not per-node chatter**: `NodeStatusChanged` and
+  `NodeOutput` fire per node, many times a second on a wide graph, and a log
+  line is a stream rather than a cache entry.
+
+  `SOURCES` maps each contract event to the in-process event class it
+  corresponds to, so a host wiring broadcasting knows what to listen for.
+
+  **Broadcast status:** the events in `FancyFlow\Laravel\Events` are dispatched
+  in-process and none implements `ShouldBroadcast`. This constant is the agreed
+  vocabulary, not a description of traffic already on the wire — a host wanting
+  live runs re-broadcasts under these names. Making them broadcast natively is a
+  separate change, because it turns on websocket traffic for every consumer.
+
+  **What you must do:** nothing. Additive; nothing reads it unless a host wires
+  it up.
+
 ## 0.13.0 — 2026-08-07
 
 ### Fixed
