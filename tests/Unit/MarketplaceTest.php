@@ -152,6 +152,17 @@ it('matches the TypeScript satisfiesRange, clause for clause', function (string 
     ['0.8.0', '~0.7.1', false],
     ['9.9.9', '*', true],
     ['0.7.0', '^0.5 || ^0.7', true],
+    // Cases where this convention deliberately DIFFERS from standard semver.
+    // Verified against all three implementations and against npm's `semver`:
+    // the first two are false under standard semver and true here. Pinned
+    // because "just use a semver library" is the obvious way to write a fourth
+    // implementation, and it would silently disagree on exactly these.
+    ['1.2.3-beta.1', '^1.2', true],   // std semver: false (prereleases excluded)
+    ['0.0.2', '^0.0.1', true],        // std semver: false (^0.0.1 pins exactly)
+    ['1.0.0', '', true],              // an empty range accepts anything
+    ['1.2.3', '1.2.3', true],         // a bare version is an exact match
+    ['1.2.3', ' ^1.2 ', true],        // surrounding whitespace is trimmed
+    ['10.0.0', '^9 || ^10', true],    // multi-major union, two-digit major
     ['1.0.0', 'not-a-range', false],
 ]);
 

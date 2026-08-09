@@ -8,6 +8,20 @@ upgrading.
 
 ---
 
+## [0.9.1] — 2026-08-09
+
+### Added
+
+- Six cases to the `satisfiesRange` table, matching `fancy-flow` and
+  `fancy-ui-cli`. Two pin places where this convention **deliberately differs
+  from standard semver**: `1.2.3-beta.1` satisfies `^1.2` here and not under
+  npm's `semver`, and `^0.0.1` admits `0.0.2` where standard semver pins it
+  exactly.
+
+  All three implementations were run against a shared case set and agree on
+  every case. The gap is a future one: a fourth implementation reaching for a
+  stock semver library would disagree on exactly these two.
+
 ## 0.14.0 — 2026-08-07
 
 ### Added
