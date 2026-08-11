@@ -8,6 +8,36 @@ upgrading.
 
 ---
 
+## 0.14.2 — 2026-08-11
+
+### Added
+
+- **The `shared/expr` conformance table runs here now**, against
+  `Nodes\Support\Expr`. `@particle-academy/fancy-flow` runs the identical rows
+  from the identical file, so a `{{ }}` divergence between the two runtimes is a
+  red build in whichever one drifted rather than a support ticket months later.
+
+  20 cases: dot-path resolution, the `$json` / `$input` aliases, the
+  whole-string-keeps-its-type rule, interpolation stringifying, and truthiness.
+  Truthiness carries the weight — `"0"`, `"false"` and `[]` are all truthy in
+  JavaScript and falsy here, and a branch node reading a form value or a JSON
+  body hits every one of them.
+
+  Verified the table can actually fail rather than trusting a green tick:
+  forwarding `Expr::truthy` to native PHP truthiness reddens cases 0013 and 0019
+  and nothing else.
+
+  Worth recording why this arrived only now. `Expr` shipped here with no
+  TypeScript twin at all until `fancy-flow` 0.43.0, and a conformance table
+  cannot catch that: it compares two implementations and reports that they
+  DISAGREE, while an absent one has nothing to run the rows against. It guards
+  drift, not absence.
+
+  **Test-only.** `particle-academy/fancy-conformance` is a `require-dev`;
+  nothing about the runtime changed and consumers do nothing.
+
+---
+
 ## 0.14.1 — 2026-08-09
 
 ### Added
