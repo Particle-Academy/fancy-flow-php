@@ -8,6 +8,31 @@ upgrading.
 
 ---
 
+## 0.14.3 — 2026-08-11
+
+### Changed
+
+- **`satisfiesRange` now asserts the SHARED table instead of a copy of it.** The
+  test carried its own hand-transcribed 17 rows — a duplicate of
+  `shared/satisfies-range`, which is the exact thing the conformance package
+  exists to remove. Two copies agree right up until someone adds a row to one of
+  them, and nothing anywhere reports that.
+
+  Same 17 rows, same results; they now come from
+  `Conformance::runTable()` and cannot drift from the copy
+  `@particle-academy/fancy-flow` and `fancy-ui-cli` assert.
+
+### Fixed
+
+- **The roadmap in `AGENTS.md` said `v0.11.0` while the package was on
+  `v0.14.1`** — three minors of shipped work described as planned, including the
+  PHP 8.4 floor and the 0.13 human-gate behaviour changes. An agent reading it
+  would have believed `autoAnswerFromInput` and `LiveContract` did not exist.
+
+  Test-only and docs-only; no runtime change, and consumers do nothing.
+
+---
+
 ## 0.14.2 — 2026-08-11
 
 ### Added

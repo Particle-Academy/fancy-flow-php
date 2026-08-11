@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use FancyFlow\Capabilities\Capabilities;
+use ParticleAcademy\Conformance\Conformance;
 use FancyFlow\Capabilities\LlmRoute;
 use FancyFlow\Capabilities\LlmRouteRequest;
 use FancyFlow\Marketplace\FixtureRunner;
@@ -137,34 +138,47 @@ it('requires an engine range on every runtime', function () {
     expect(fields($problems))->toContain('runtimes.ts.engine');
 });
 
-it('matches the TypeScript satisfiesRange, clause for clause', function (string $version, string $range, bool $expected) {
-    // Pinned against the TS implementation: a package accepted by one
-    // runtime's tooling and rejected by the other is worse than no check.
-    expect(NodeManifest::satisfiesRange($version, $range))->toBe($expected);
-})->with([
-    ['0.15.1', '^0.15', true],
-    ['0.16.0', '^0.15', false],
-    ['1.2.0', '^1.0', true],
-    ['2.0.0', '^1.0', false],
-    ['0.7.0', '>=0.7', true],
-    ['0.5.0', '>=0.7', false],
-    ['0.7.3', '~0.7.1', true],
-    ['0.8.0', '~0.7.1', false],
-    ['9.9.9', '*', true],
-    ['0.7.0', '^0.5 || ^0.7', true],
-    // Cases where this convention deliberately DIFFERS from standard semver.
-    // Verified against all three implementations and against npm's `semver`:
-    // the first two are false under standard semver and true here. Pinned
-    // because "just use a semver library" is the obvious way to write a fourth
-    // implementation, and it would silently disagree on exactly these.
-    ['1.2.3-beta.1', '^1.2', true],   // std semver: false (prereleases excluded)
-    ['0.0.2', '^0.0.1', true],        // std semver: false (^0.0.1 pins exactly)
-    ['1.0.0', '', true],              // an empty range accepts anything
-    ['1.2.3', '1.2.3', true],         // a bare version is an exact match
-    ['1.2.3', ' ^1.2 ', true],        // surrounding whitespace is trimmed
-    ['10.0.0', '^9 || ^10', true],    // multi-major union, two-digit major
-    ['1.0.0', 'not-a-range', false],
-]);
+it('matches the shared satisfies-range table, row for row', function () {
+    // Read from `particle-academy/fancy-conformance`, not transcribed here.
+    //
+    // This test used to carry its own 17-row dataset — a hand-copied duplicate
+    // of the shared table, which is the exact thing the conformance package
+    // exists to remove. Two copies of a table agree until the day someone adds
+    // a row to one of them, and nothing reports that; a package accepted by one
+    // runtime's tooling and rejected by the other is worse than no check at all.
+    //
+    // Several rows deliberately DISAGREE with standard semver — `1.2.3-beta.1`
+    // satisfies `^1.2` here, and `^0.0.1` is not an exact pin. They are tagged
+    // `non-standard` upstream precisely because "just use a semver library" is
+    // the obvious way to write a fourth implementation and it would silently
+    // differ on exactly those.
+    $summary = Conformance::runTable(
+        'shared/satisfies-range',
+        fn (array $case): bool => NodeManifest::satisfiesRange(
+            $case['input']['version'],
+            $case['input']['range'],
+        ),
+    );
+
+    echo "
+".Conformance::formatSummary($summary)."
+";
+
+    $failures = array_filter(
+        $summary['results'] ?? [],
+        static fn (array $r): bool => ($r['status'] ?? '') === 'fail'
+    );
+
+    expect($failures)->toBe([], 'diverges from the shared table on: '.implode(
+        ', ',
+        array_column($failures, 'id')
+    ));
+
+    // Vacuity guards: a suite that failed to load, or skipped every row, would
+    // otherwise report zero failures and read as parity.
+    expect($summary['failed'])->toBe(0);
+    expect($summary['passed'])->toBeGreaterThan(12);
+});
 
 it('accepts aliases, configVersion and sideEffects', function () {
     expect(NodeManifest::isValid(validManifest([

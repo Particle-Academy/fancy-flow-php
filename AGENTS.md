@@ -108,17 +108,24 @@ envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
-**Shipped (current tag `v0.11.0`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
+**Shipped (current tag `v0.14.2`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
 agentic → 0.4 durable human input (`user_input` pause/resume) → 0.5 capabilities
 + namespaced kind ids (`llm_router`, `subflow`, shipped LLM adapters) → 0.6–0.8
 Human+, the node marketplace, and `#[FlowNode]` discovery → 0.9 trigger cohorts
 (`dispatchCohort`, `TriggerGuard`, the `skipped` status) → 0.10 one job per node
 (the `per_node` queue driver, the `workflow_run_nodes` claim table, per-node
-retries keyed on `sideEffects`) → 0.11 that driver became the DEFAULT. Treat
-everything up to 0.11 as **done, not
-planned** — `src/Laravel/` (service provider, facade, both queue drivers,
-`TriggerCohort`, Eloquent + container resolvers, Artisan, HTTP),
-`src/Marketplace/`, `src/Schema/`, and `src/Attributes/` are all live.
+retries keyed on `sideEffects`) → 0.11 that driver became the DEFAULT → 0.12 the
+PHP 8.4 floor → 0.13 human gates that cannot be walked past → 0.14 `LiveContract`
++ the shared conformance tables. Treat all of it as **done, not planned** —
+`src/Laravel/` (service provider, facade, both queue drivers, `TriggerCohort`,
+Eloquent + container resolvers, Artisan, HTTP), `src/Marketplace/`,
+`src/Schema/`, and `src/Attributes/` are all live.
+
+**This line said `v0.11.0` while the package was on `v0.14.1`** — three minors of
+"planned" work that had in fact shipped. A roadmap in a file nobody has to touch
+when they release is a roadmap that goes stale silently, so prefer describing
+what EXISTS in the sections above; a version number here earns its place only by
+being checked against `git tag` when it is read.
 
 **`per_node` is the default as of 0.11.** `single` is still fully supported and
 NOT deprecated — `FANCY_FLOW_QUEUE_DRIVER=single` selects it — so the two drivers
@@ -126,5 +133,24 @@ have to keep passing the same durable suite. Each pins its own driver explicitly
 in its test case (`DurableTestCase` → `single`, `PerNodeTestCase` → `per_node`);
 neither may go back to inheriting the shipped default, or the next flip silently
 repoints a suite at the driver it does not name.
+
+**Human gates fail CLOSED as of 0.13.** `user_input` and `human_approval` decided
+whether to pause by reading their own input port, so a pre-filled `values` /
+`approved` value ran the flow straight past the person it was waiting for.
+Restoring that is now explicit and per-node (`autoAnswerFromInput`), and
+recording an answer for a node the run is not parked on throws instead of
+queueing a write nobody reads.
+
+**Parity is a test result, not a claim.** `tests/Parity/` runs the golden
+workflow fixtures plus `shared/expr`; `tests/Unit/MarketplaceTest.php` runs
+`shared/satisfies-range`. Both tables come from the installed
+`particle-academy/fancy-conformance`, and `@particle-academy/fancy-flow` asserts
+the same rows on its own side — so a `{{ }}` or range divergence is a red build
+in whichever runtime drifted.
+
+Load tables through `Conformance::runTable()`, never by transcribing rows.
+`satisfiesRange` was asserted against a hand-copied 17-row duplicate of the
+shared table until 0.14.2: two copies agree right up until someone adds a row to
+one of them, and nothing anywhere reports that.
 
 Plan: envelope `.ai/plans/fancy-flow-php.md`.
