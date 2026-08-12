@@ -8,6 +8,44 @@ upgrading.
 
 ---
 
+## 0.15.1 — 2026-08-12
+
+### Fixed
+
+- **A human gate addressed by its CANONICAL kind id did not pause — the run
+  went straight past the person** (#4). A `user_input` or `human_approval` node
+  saved as `@particle-academy/user_input` ran as a pass-through with empty
+  output, the run reached `completed`, and downstream nodes received empty
+  values. The bare `user_input` paused correctly, which is what made this so
+  easy to miss.
+
+  **This is the id an editor persists**, so every human step authored in the
+  editor was affected — precisely defeating the "human gates fail closed"
+  guarantee for the ids that actually get written to documents.
+
+  The cause was `ExecutorRegistry::bind()` keying literally. The builtins are
+  bound under all three ids, resolution tries the node's literal id FIRST, and
+  the durable overrides were bound under the bare name only — so the canonical
+  id matched the plain pass-through executor and the override was never
+  reached. Nothing errored, which is what let it ship.
+
+  `bind()` is now alias-aware for kinds the package knows: binding `user_input`
+  binds `@particle-academy/user_input` and `@fancy/user_input` with it. That
+  fixes the same trap for **any host** overriding a builtin by bare name, which
+  is the more important half — the durable executors were just the first
+  casualty.
+
+  **What to do:** upgrade. No API changed and no configuration is involved. If
+  you deliberately bound only one spelling of a builtin expecting the others to
+  fall through elsewhere, that no longer happens; binding an UNKNOWN kind is
+  still literal, so third-party kinds are unaffected.
+
+### Changed
+
+- `Registry\Builtin::kindIdIndex()` is public. An override has to agree with
+  the bindings it overrides, and the kind registry is not necessarily populated
+  at bind time, so it cannot be the only source of a kind's ids.
+
 ## 0.15.0 — 2026-08-12
 
 ### Added

@@ -8,6 +8,7 @@ use Closure;
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Contracts\Resolver;
 use FancyFlow\Exceptions\FlowException;
+use FancyFlow\Registry\Builtin;
 use FancyFlow\Registry\KindId;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Schema\FlowNode;
@@ -43,12 +44,77 @@ final class ExecutorRegistry
         $this->kinds = $kinds;
     }
 
-    /** Bind an executor to a node kind (e.g. `api_request`) or the `*` fallback. */
+    /**
+     * Bind an executor to a node kind (e.g. `api_request`) or the `*` fallback.
+     *
+     * **Alias-aware for kinds this registry knows.** Binding `user_input` binds
+     * `@particle-academy/user_input` and `@fancy/user_input` with it, because
+     * they are the same kind and a caller overriding one means the kind.
+     *
+     * Keying literally was a silent trap, and it cost a human gate (#4). The
+     * builtins are bound under all three ids, `resolveFor` tries the node's
+     * literal id FIRST, and the durable `user_input` override was bound under
+     * the bare name only — so a node saved as `@particle-academy/user_input`
+     * matched the plain pass-through executor and the run went straight past
+     * the person it was meant to stop for. Nothing errored; the run just
+     * completed. Every host overriding a builtin by bare name had the same
+     * trap waiting.
+     *
+     * An UNKNOWN kind is still bound literally. Expanding one would claim
+     * `@particle-academy/<name>` for somebody else's node, which is the
+     * opposite mistake.
+     */
     public function bind(string $kind, callable|NodeExecutor|string $executor): static
     {
         $this->byKind[$kind] = $executor;
 
+        // The `*` fallback is a sentinel, not a kind: it has no aliases and
+        // must never be expanded into namespaced spellings.
+        if ($kind === '*') {
+            return $this;
+        }
+
+        foreach ($this->aliasIdsFor($kind) as $id) {
+            $this->byKind[$id] = $executor;
+        }
+
         return $this;
+    }
+
+    /**
+     * Every id a KNOWN kind answers to, minus the one just bound.
+     *
+     * Declared aliases come from the kind registry, because convention alone
+     * cannot get you from `llm_branch` to `llm_router` — only the kind's own
+     * alias list does. Convention variants are added for a kind that is
+     * registered but whose ids omit a spelling.
+     *
+     * Empty for a kind the registry has never heard of.
+     *
+     * @return list<string>
+     */
+    private function aliasIdsFor(string $kind): array
+    {
+        $registry = $this->kinds ?? NodeKindRegistry::default();
+        $declared = $registry->idsFor($kind);
+
+        if ($declared === []) {
+            // The kind registry is not necessarily populated when a binding is
+            // made — a forked registry overriding a builtin often has none at
+            // all — so fall back to the builtin index, which is the SAME
+            // authority the base bindings were expanded from. Agreeing with it
+            // by construction is the whole point.
+            $declared = Builtin::kindIdIndex()[KindId::bare($kind)] ?? [];
+        }
+
+        if ($declared === []) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_unique([...$declared, ...KindId::variants($kind)]),
+            static fn (string $id): bool => $id !== $kind,
+        ));
     }
 
     /** Bind an executor to a single node id — highest precedence. */

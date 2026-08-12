@@ -529,3 +529,42 @@ it('refuses an answer for a node the run is not parked on', function () {
     expect(fn () => $run->submitInput('form', ['again' => true]))
         ->toThrow(\FancyFlow\Exceptions\NotAwaitingHuman::class);
 });
+
+it('pauses at a user_input node addressed by its CANONICAL kind id', function () {
+    // fancy-flow-php#4. An editor persists the canonical namespaced id, so this
+    // is the id every graph authored in the editor actually carries -- which
+    // makes it the one that matters most for "human gates fail closed".
+    $schema = dschema(
+        [
+            dnode('t', '@particle-academy/manual_trigger'),
+            dnode('form', '@particle-academy/user_input', ['title' => 'Plan your day', 'fields' => [['key' => 'focus', 'label' => 'Top focus', 'type' => 'text']]]),
+            dnode('o', 'output'),
+        ],
+        [['id' => 'e1', 'source' => 't', 'target' => 'form'], ['id' => 'e2', 'source' => 'form', 'target' => 'o']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+    expect($run->awaiting_node)->toBe('form');
+    expect($run->outputs)->toBeNull();
+});
+
+it('pauses at a human_approval node addressed by its CANONICAL kind id', function () {
+    // The report flagged this as "likely shares it" -- verify rather than assume.
+    $schema = dschema(
+        [
+            dnode('t', '@particle-academy/manual_trigger'),
+            dnode('gate', '@particle-academy/human_approval', ['prompt' => 'Ship it?']),
+            dnode('o', 'output'),
+        ],
+        [['id' => 'e1', 'source' => 't', 'target' => 'gate'], ['id' => 'e2', 'source' => 'gate', 'target' => 'o']],
+    );
+
+    $run = FancyFlow::dispatch($schema, ['t' => []]);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_APPROVAL);
+    expect($run->awaiting_node)->toBe('gate');
+});

@@ -136,7 +136,18 @@ final class Builtin
      *
      * @return array<string, list<string>>
      */
-    private static function kindIdIndex(): array
+    /**
+     * Bare kind name => every id that kind answers to.
+     *
+     * PUBLIC because an override has to agree with the bindings it is
+     * overriding. `ExecutorRegistry::bind()` consults this so that replacing
+     * `user_input` replaces it under all three ids, the way the base bindings
+     * were made — the kind registry is not necessarily populated at bind time,
+     * so it cannot be the only source (#4).
+     *
+     * @return array<string, list<string>>
+     */
+    public static function kindIdIndex(): array
     {
         $index = [];
         foreach ([...self::kinds(), ...self::structuralKinds(), self::agentKind()] as $raw) {
