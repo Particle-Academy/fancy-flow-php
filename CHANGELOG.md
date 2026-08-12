@@ -8,6 +8,58 @@ upgrading.
 
 ---
 
+## 0.16.0 — 2026-08-12
+
+### Added
+
+- **`Security\GraphPolicy` — the trust layer for graphs you did not write.**
+  `Workflow::import()` answers "is this graph COHERENT?"; this answers "is it
+  safe to ACCEPT?" A graph arriving over HTTP from a stranger is a payload
+  first and a workflow second, and it gets persisted to a queue table and later
+  rehydrated by a worker that trusts it.
+
+  ```php
+  use FancyFlow\Security\GraphPolicy;
+
+  $policy = GraphPolicy::untrusted()
+      ->allowKinds(['manual_trigger', 'user_input', 'branch', 'transform', 'llm_call', 'output'])
+      ->withLimits(maxNodes: 25);
+
+  $policy->assert($schema);   // throws UnsafeGraph, carrying EVERY issue
+  $issues = $policy->inspect($schema);   // or collect them for a UI
+  ```
+
+  What it checks:
+
+  - **Kind policy.** An allowlist decides which executors a stranger may cause
+    to run. `untrusted()` ships with NO allowlist on purpose — this package
+    cannot guess which of its kinds are safe in your app, so naming them is
+    yours.
+  - **Size caps.** Nodes, edges, nesting depth, string length, total bytes. A
+    deeply nested config is a stack overflow in whatever parses it next.
+  - **Byte hygiene.** Invalid UTF-8, NUL, and C0/C1 control characters are
+    refused in every string — including keys. These do not occur in real
+    workflows and are what gets used to smuggle content past a log, a terminal,
+    or a downstream parser that disagrees with PHP about where a string ends.
+    Tab, newline and carriage return are allowed, because prompts contain them.
+  - **Structure.** Duplicate node ids and edges pointing at nodes that do not
+    exist.
+  - **Host rules.** `addRule()` takes a closure, so a host can assert what this
+    package cannot know without forking the class.
+
+  **The kind policy is ALIAS-AWARE, and that is the point.** A kind answers to
+  several ids (`api_request`, `@particle-academy/api_request`,
+  `@fancy/api_request`). A denylist keyed on the literal string you happened to
+  write is not a denylist — it is a suggestion the attacker declines by
+  spelling the kind differently. Every id is resolved before any comparison.
+
+  Allowlists are recommended over denylists for exactly the reason the two
+  behave differently under a respelling: an allowlist fails closed, a denylist
+  does not.
+
+  The policy is immutable — every wither returns a clone — so a base policy
+  shared between call sites cannot be widened by one of them.
+
 ## 0.15.1 — 2026-08-12
 
 ### Fixed
