@@ -8,6 +8,53 @@ upgrading.
 
 ---
 
+## 0.15.0 — 2026-08-12
+
+### Added
+
+- **Schema-typed output for `llm_call`** (fancy-flow#6). Set `response_schema`
+  (JSON Schema) on the node and it emits the *parsed* value as `data` alongside
+  `text`, so a downstream node can write `{{ $json.data[0].title }}` instead of
+  parsing a string.
+
+  The schema is carried to the adapter in `$options['response_schema']`, so a
+  client that supports provider-native structured output (Anthropic tool result,
+  OpenAI `response_format: json_schema`) can constrain the model rather than
+  relying on prompt wording. An adapter that ignores it still works: the node
+  extracts and validates from `text`.
+
+  **`data` supplied by an adapter is validated, not trusted.** "The provider
+  promised" is not the same as "the provider did", and the point of asking for a
+  schema is that the next node can rely on the shape.
+
+  **A response that cannot be parsed, or does not match, FAILS the node.** That
+  is the behaviour change worth knowing about, and it is deliberate: a truncated
+  array decodes to nothing and is indistinguishable from a model that found no
+  results, so the old prompt-and-parse approach turned a truncation into a
+  workflow that quietly processed zero records.
+
+  **What to do:** nothing, unless you want it. `llm_call` without
+  `response_schema` behaves exactly as before — same options out, same result
+  back, no `data` key.
+
+- **`StructuredOutput`** — the extractor and validator behind it. Recovers JSON
+  from a ```` ```json ```` fence and from a prose preamble or trailing note, both
+  of which models emit despite instructions; raises on truncation rather than
+  guessing.
+
+  The validator enforces a documented SUBSET of JSON Schema — `type`,
+  `required`, `properties`, `items`, `enum` — and ignores the rest. Said out
+  loud in the class docblock and pinned by a test, because a validator that
+  silently skips the keyword you relied on is worse than one that names what it
+  checks. Dependency-free: core takes no runtime dependencies.
+
+### Changed
+
+- `Nodes\Support\LlmClient::complete()` documents `response_schema` in
+  `$options` and `data` in its return shape. **The interface signature is
+  unchanged** — both are optional, so every existing implementation still
+  satisfies it and needs no edit.
+
 ## 0.14.3 — 2026-08-11
 
 ### Changed

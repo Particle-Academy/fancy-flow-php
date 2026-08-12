@@ -153,6 +153,93 @@ it('llm_call returns a completion from the client', function () {
     expect($client->prompts)->toHaveCount(1);
 });
 
+/**
+ * Schema-typed output (fancy-flow#6).
+ *
+ * The node's contract, as opposed to the parser's: what `data` is, when it
+ * appears, and that an adapter's claim about it is checked rather than trusted.
+ */
+it('llm_call leaves the result untouched when no schema is asked for', function () {
+    $out = ffExec(new LlmCallExecutor(new EchoLlmClient()), ['model' => 'claude', 'prompt' => 'ping'], ['in' => []]);
+
+    // The whole point of the feature being opt-in: nothing changes for flows
+    // that were already running.
+    expect($out)->not->toHaveKey('data');
+    expect($out['text'])->toBe('[claude] ping');
+});
+
+it('llm_call parses text into data when the adapter ignores response_schema', function () {
+    // The realistic case. An adapter with no structured-output support returns
+    // prose; without this the downstream `{{ $json.data }}` is undefined and
+    // nothing reports it.
+    $client = new class implements FancyFlow\Nodes\Support\LlmClient
+    {
+        /** @var array<string,mixed> */
+        public array $options = [];
+
+        public function complete(string $prompt, array $options = []): array
+        {
+            $this->options = $options;
+
+            return ['text' => "Here you go:\n```json\n[{\"title\":\"a\"}]\n```"];
+        }
+    };
+
+    $schema = ['type' => 'array', 'items' => ['type' => 'object', 'required' => ['title']]];
+    $out = ffExec(new LlmCallExecutor($client), ['prompt' => 'x', 'response_schema' => $schema], ['in' => []]);
+
+    expect($out['data'])->toBe([['title' => 'a']]);
+    // And the schema reached the adapter, so one that CAN constrain the model
+    // has what it needs.
+    expect($client->options['response_schema'])->toBe($schema);
+});
+
+it('llm_call validates data the adapter supplied rather than trusting it', function () {
+    // Provider-native structured output is a promise, not a guarantee.
+    $client = new class implements FancyFlow\Nodes\Support\LlmClient
+    {
+        public function complete(string $prompt, array $options = []): array
+        {
+            return ['text' => '', 'data' => [['title' => 5]]];
+        }
+    };
+
+    $schema = ['type' => 'array', 'items' => ['type' => 'object', 'properties' => ['title' => ['type' => 'string']]]];
+
+    expect(fn () => ffExec(new LlmCallExecutor($client), ['prompt' => 'x', 'response_schema' => $schema], ['in' => []]))
+        ->toThrow(FancyFlow\Exceptions\FlowException::class);
+});
+
+it('llm_call raises on a truncated response instead of passing null downstream', function () {
+    $client = new class implements FancyFlow\Nodes\Support\LlmClient
+    {
+        public function complete(string $prompt, array $options = []): array
+        {
+            return ['text' => '[{"id":1},{"ti'];
+        }
+    };
+
+    expect(fn () => ffExec(new LlmCallExecutor($client), ['prompt' => 'x', 'response_schema' => ['type' => 'array']], ['in' => []]))
+        ->toThrow(FancyFlow\Exceptions\FlowException::class);
+});
+
+it('llm_call accepts a schema typed as a JSON string', function () {
+    // The editor's `json` field hands across either shape depending on the
+    // host; accepting one and ignoring the other would make this work on one
+    // host and silently do nothing on another.
+    $client = new class implements FancyFlow\Nodes\Support\LlmClient
+    {
+        public function complete(string $prompt, array $options = []): array
+        {
+            return ['text' => '{"ok":true}'];
+        }
+    };
+
+    $out = ffExec(new LlmCallExecutor($client), ['prompt' => 'x', 'response_schema' => '{"type":"object"}'], ['in' => []]);
+
+    expect($out['data'])->toBe(['ok' => true]);
+});
+
 it('tool_use invokes a tool', function () {
     $invoker = new EchoToolInvoker();
     $out = ffExec(new ToolUseExecutor($invoker), ['tool' => 'search', 'args' => '{{ $json }}'], ['in' => ['q' => 'x']]);

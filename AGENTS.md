@@ -108,7 +108,7 @@ envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
-**Shipped (current tag `v0.14.2`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
+**Shipped (current tag `v0.15.0`):** 0.1 core → 0.2 Laravel layer → 0.3 durable +
 agentic → 0.4 durable human input (`user_input` pause/resume) → 0.5 capabilities
 + namespaced kind ids (`llm_router`, `subflow`, shipped LLM adapters) → 0.6–0.8
 Human+, the node marketplace, and `#[FlowNode]` discovery → 0.9 trigger cohorts
@@ -116,7 +116,7 @@ Human+, the node marketplace, and `#[FlowNode]` discovery → 0.9 trigger cohort
 (the `per_node` queue driver, the `workflow_run_nodes` claim table, per-node
 retries keyed on `sideEffects`) → 0.11 that driver became the DEFAULT → 0.12 the
 PHP 8.4 floor → 0.13 human gates that cannot be walked past → 0.14 `LiveContract`
-+ the shared conformance tables. Treat all of it as **done, not planned** —
++ the shared conformance tables → 0.15 schema-typed `llm_call` output (`response_schema` → a parsed, validated `data`; `StructuredOutput`). Treat all of it as **done, not planned** —
 `src/Laravel/` (service provider, facade, both queue drivers, `TriggerCohort`,
 Eloquent + container resolvers, Artisan, HTTP), `src/Marketplace/`,
 `src/Schema/`, and `src/Attributes/` are all live.
