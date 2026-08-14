@@ -8,6 +8,52 @@ upgrading.
 
 ---
 
+## 0.17.0 — 2026-08-14
+
+### Added
+
+- **`Analysis\SubflowCycle` — catch a subflow loop at AUTHORING time, not on the
+  Nth pass of a run** (#5).
+
+  ```php
+  $loop = SubflowCycle::find($graph, $resolver, 'Daily Planner');
+  // ['Daily Planner', 'Digest', 'Daily Planner']  — or [] when safe
+  ```
+
+  `SubflowExecutor`'s depth cap stays and is still the right backstop: it is the
+  only thing that catches a loop created from the other end, when someone edits
+  B after A was saved. But it fires mid-run, by which point every node ABOVE the
+  subflow has already executed on each pass — writes, webhooks, notifications,
+  LLM calls — and the author gets an opaque failure from deep inside a run while
+  the graph that caused it stays saved and runnable.
+
+  `Workflow::import()` cannot see this: it validates ONE schema in isolation, and
+  A → B → A is made of two individually valid graphs. Detection needs the
+  resolver, which only the host has — which is exactly why this belongs in the
+  package. A host CAN write the ~90 lines (one did), but that code hard-codes the
+  `subflow` config key and the ref/version rules, both of which are this
+  package's contract, and it has no view of composition kinds added later.
+
+  The chain is returned rather than a boolean, because "this loops" is much less
+  useful than naming the step that closes it.
+
+  Three behaviours worth knowing, each of which would otherwise refuse a good
+  graph or miss a bad one:
+  - a **diamond** is not a cycle — membership is tracked per path, so two
+    branches calling the same child is fine;
+  - **version pins are distinct** — `A@1 → A@2` is not a loop on its own;
+  - it **descends into an inline `subgraph`**, which cannot cycle by itself (it
+    embeds a graph rather than naming one) but can contain a `subflow` that does.
+
+  An unresolvable ref, or a resolution failure, is treated as safe: a missing
+  workflow is a different problem, and refusing the save for it would block
+  authoring a parent before its child exists.
+
+  **What you must do:** nothing — this is additive, and nothing calls it for you.
+  Call it before persisting a graph if you want loops refused at the door.
+  Parity: the TS twin ships as `findSubflowCycle` in
+  `@particle-academy/fancy-flow/engine`.
+
 ## 0.16.0 — 2026-08-12
 
 ### Added
