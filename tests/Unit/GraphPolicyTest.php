@@ -6,6 +6,14 @@ use FancyFlow\Schema\ImportIssue;
 use FancyFlow\Security\GraphPolicy;
 use FancyFlow\Security\UnsafeGraph;
 
+/**
+ * The kinds these fixtures happen to use. Most tests here exercise a rule that
+ * has nothing to do with kinds -- null bytes, escape sequences, depth, caps --
+ * and only need the allowlist satisfied so they can reach it.
+ */
+const GP_KINDS = ['manual_trigger', 'transform', 'api_request', 'user_input'];
+
+
 function gp_graph(array $nodes, array $edges = []): array
 {
     return ['graph' => ['nodes' => $nodes, 'edges' => $edges]];
@@ -27,7 +35,7 @@ function gp_node(string $id, string $kind, array $config = []): array
  */
 describe('kind policy', function () {
     it('permits what the allowlist names', function () {
-        $policy = GraphPolicy::untrusted()->allowKinds(['manual_trigger', 'transform']);
+        $policy = GraphPolicy::untrusted(['manual_trigger', 'transform']);
 
         expect($policy->inspect(gp_graph([
             gp_node('a', 'manual_trigger'),
@@ -36,7 +44,7 @@ describe('kind policy', function () {
     });
 
     it('refuses a kind that is not on the allowlist', function () {
-        $policy = GraphPolicy::untrusted()->allowKinds(['manual_trigger']);
+        $policy = GraphPolicy::untrusted(['manual_trigger']);
 
         $issues = $policy->inspect(gp_graph([gp_node('a', 'api_request')]));
 
@@ -50,7 +58,7 @@ describe('kind policy', function () {
         // be a bypass. Every id a kind answers to is resolved before any
         // comparison, so the canonical spelling is refused exactly as the bare
         // one is.
-        $policy = GraphPolicy::untrusted()->allowKinds(['manual_trigger']);
+        $policy = GraphPolicy::untrusted(['manual_trigger']);
 
         foreach (['api_request', '@particle-academy/api_request', '@fancy/api_request'] as $spelling) {
             expect($policy->inspect(gp_graph([gp_node('a', $spelling)])))
@@ -67,7 +75,7 @@ describe('kind policy', function () {
         // This is the test that would catch alias-awareness regressing. The
         // allowlist version above cannot, and I nearly shipped it believing it
         // could.
-        $policy = GraphPolicy::untrusted()->denyKinds(['api_request']);
+        $policy = GraphPolicy::untrusted(GP_KINDS)->denyKinds(['api_request']);
 
         foreach (['api_request', '@particle-academy/api_request', '@fancy/api_request'] as $spelling) {
             expect($policy->inspect(gp_graph([gp_node('a', $spelling)])))
@@ -78,7 +86,7 @@ describe('kind policy', function () {
     it('allows every spelling of an ALLOWED kind, so the policy is not a trap either', function () {
         // The other direction matters just as much: an allowlist that accepts
         // only one spelling rejects graphs an editor legitimately saved.
-        $policy = GraphPolicy::untrusted()->allowKinds(['user_input']);
+        $policy = GraphPolicy::untrusted(['user_input']);
 
         foreach (['user_input', '@particle-academy/user_input', '@fancy/user_input'] as $spelling) {
             expect($policy->inspect(gp_graph([gp_node('a', $spelling)])))
@@ -88,31 +96,31 @@ describe('kind policy', function () {
 
     it('refuses a denied kind even when the allowlist names it', function () {
         // A contradiction resolves the safe way.
-        $policy = GraphPolicy::untrusted()->allowKinds(['api_request'])->denyKinds(['api_request']);
+        $policy = GraphPolicy::untrusted(['api_request'])->denyKinds(['api_request']);
 
         expect($policy->inspect(gp_graph([gp_node('a', 'api_request')])))->not->toBe([]);
     });
 
     it('has no allowlist by default, so the caller must opt in deliberately', function () {
-        expect(GraphPolicy::untrusted()->inspect(gp_graph([gp_node('a', 'api_request')])))->toBe([]);
+        expect(GraphPolicy::untrusted(['api_request'])->inspect(gp_graph([gp_node('a', 'api_request')])))->toBe([]);
     });
 });
 
 describe('byte hygiene', function () {
     it('refuses a NUL byte in config', function () {
-        $issues = GraphPolicy::untrusted()->inspect(gp_graph([gp_node('a', 'transform', ['x' => "ok\0hidden"])]));
+        $issues = GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph([gp_node('a', 'transform', ['x' => "ok\0hidden"])]));
 
         expect($issues)->not->toBe([]);
     });
 
     it('refuses control characters', function () {
-        $issues = GraphPolicy::untrusted()->inspect(gp_graph([gp_node('a', 'transform', ['x' => "a\x1bb"])]));
+        $issues = GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph([gp_node('a', 'transform', ['x' => "a\x1bb"])]));
 
         expect($issues)->not->toBe([]);
     });
 
     it('allows tab, newline and carriage return, which real prompts contain', function () {
-        $issues = GraphPolicy::untrusted()->inspect(gp_graph([
+        $issues = GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph([
             gp_node('a', 'transform', ['prompt' => "Line one\nLine two\r\n\tIndented"]),
         ]));
 
@@ -120,7 +128,7 @@ describe('byte hygiene', function () {
     });
 
     it('checks keys as well as values', function () {
-        $issues = GraphPolicy::untrusted()->inspect(gp_graph([gp_node('a', 'transform', ["bad\0key" => 'x'])]));
+        $issues = GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph([gp_node('a', 'transform', ["bad\0key" => 'x'])]));
 
         expect($issues)->not->toBe([]);
     });
@@ -133,7 +141,7 @@ describe('size caps', function () {
             $nodes[] = gp_node("n{$i}", 'transform');
         }
 
-        expect(GraphPolicy::untrusted()->inspect(gp_graph($nodes)))->not->toBe([]);
+        expect(GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph($nodes)))->not->toBe([]);
     });
 
     it('refuses a nesting bomb', function () {
@@ -142,11 +150,11 @@ describe('size caps', function () {
             $deep = ['n' => $deep];
         }
 
-        expect(GraphPolicy::untrusted()->inspect(gp_graph([gp_node('a', 'transform', ['x' => $deep])])))->not->toBe([]);
+        expect(GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph([gp_node('a', 'transform', ['x' => $deep])])))->not->toBe([]);
     });
 
     it('refuses an oversized string', function () {
-        $issues = GraphPolicy::untrusted()
+        $issues = GraphPolicy::untrusted(GP_KINDS)
             ->withLimits(maxStringLength: 10)
             ->inspect(gp_graph([gp_node('a', 'transform', ['x' => str_repeat('a', 11)])]));
 
@@ -154,7 +162,7 @@ describe('size caps', function () {
     });
 
     it('refuses an oversized payload before walking it', function () {
-        $issues = GraphPolicy::untrusted()
+        $issues = GraphPolicy::untrusted(GP_KINDS)
             ->withLimits(maxBytes: 100)
             ->inspect(gp_graph([gp_node('a', 'transform', ['x' => str_repeat('a', 500)])]));
 
@@ -164,7 +172,7 @@ describe('size caps', function () {
 
 describe('structure', function () {
     it('refuses duplicate node ids', function () {
-        $issues = GraphPolicy::untrusted()->inspect(gp_graph([
+        $issues = GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph([
             gp_node('a', 'transform'),
             gp_node('a', 'transform'),
         ]));
@@ -173,7 +181,7 @@ describe('structure', function () {
     });
 
     it('refuses an edge pointing at a node that does not exist', function () {
-        $issues = GraphPolicy::untrusted()->inspect(gp_graph(
+        $issues = GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph(
             [gp_node('a', 'transform')],
             [['id' => 'e1', 'source' => 'a', 'target' => 'ghost']],
         ));
@@ -182,7 +190,7 @@ describe('structure', function () {
     });
 
     it('refuses a node with no kind', function () {
-        expect(GraphPolicy::untrusted()->inspect(gp_graph([['id' => 'a']])))->not->toBe([]);
+        expect(GraphPolicy::untrusted(GP_KINDS)->inspect(gp_graph([['id' => 'a']])))->not->toBe([]);
     });
 });
 
@@ -190,7 +198,7 @@ describe('extension and enforcement', function () {
     it('runs a host rule alongside the built-in checks', function () {
         // The point of the extension seam: a host knows things this package
         // cannot, and should not have to fork the class to say so.
-        $policy = GraphPolicy::untrusted()->addRule(function (array $schema): array {
+        $policy = GraphPolicy::untrusted(GP_KINDS)->addRule(function (array $schema): array {
             $nodes = $schema['graph']['nodes'] ?? [];
 
             return count($nodes) > 1 ? [ImportIssue::error('This host allows one node.')] : [];
@@ -201,7 +209,7 @@ describe('extension and enforcement', function () {
     });
 
     it('assert() throws and carries EVERY issue, not just the first', function () {
-        $policy = GraphPolicy::untrusted()->allowKinds(['transform']);
+        $policy = GraphPolicy::untrusted(['transform']);
 
         $caught = null;
 
@@ -219,10 +227,25 @@ describe('extension and enforcement', function () {
     it('is immutable, so a shared base policy cannot be widened by a caller', function () {
         // Every wither returns a clone. A host handing the same policy to two
         // call sites must not find one of them loosened by the other.
-        $base = GraphPolicy::untrusted()->allowKinds(['transform']);
+        $base = GraphPolicy::untrusted(['transform']);
         $widened = $base->allowKinds(['transform', 'api_request']);
 
         expect($base->inspect(gp_graph([gp_node('a', 'api_request')])))->not->toBe([]);
         expect($widened->inspect(gp_graph([gp_node('a', 'api_request')])))->toBe([]);
     });
+});
+
+it('cannot be constructed without naming what it permits', function () {
+    // The whole point of `untrusted()` is that an ALLOWLIST fails closed, which
+    // is what its own docblock argues for. It used to default the list to
+    // *absent* rather than empty, and absent meant "permit everything" -- so a
+    // caller who forgot to chain `allowKinds()` got a policy named `untrusted`
+    // that restricted no kind at all. The list is now a required argument, so
+    // the mistake cannot be made.
+    $policy = GraphPolicy::untrusted(['manual_trigger']);
+
+    $issues = $policy->inspect(gp_graph([gp_node('a', 'api_request')]));
+
+    expect($issues)->not->toBe([]);
+    expect($issues[0]->message)->toContain('not on the allowed list');
 });

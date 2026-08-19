@@ -8,6 +8,40 @@ upgrading.
 
 ---
 
+## 0.18.0 — 2026-08-18
+
+### Security
+
+- **`GraphPolicy::untrusted()` permitted every kind unless you remembered to
+  chain `allowKinds()`.** The allowlist defaulted to *absent* rather than empty,
+  and absent meant no kind restriction at all — so a policy named `untrusted`,
+  applied to a graph from an untrusted author, silently enforced only the size
+  and byte caps while reading as though it were locked down.
+
+  The method's own docblock argued the opposite ("an allowlist fails the other
+  way, which is the correct way", "empty by design"), and a test asserted that a
+  bare `untrusted()` policy raised no issue on an `api_request` node — so the
+  behaviour was pinned in place by the suite that should have caught it.
+
+  **BREAKING, and deliberately so: the allowlist is now a required argument.**
+  The mistake can no longer be expressed.
+
+  ```php
+  // before — compiled, ran, restricted nothing
+  GraphPolicy::untrusted()
+
+  // after
+  GraphPolicy::untrusted(['manual_trigger', 'transform'])
+  ```
+
+  **What to do:** anywhere you call `GraphPolicy::untrusted()`, pass the kinds
+  that graph is allowed to use. If you already chained `->allowKinds([...])` you
+  were never exposed — move that list into the call and delete the chain. If you
+  did **not** chain it, treat any graph you accepted under that policy as having
+  been kind-unrestricted.
+
+  Found while building the Python runtime twin, whose equivalent fails closed.
+
 ## 0.17.0 — 2026-08-14
 
 ### Added

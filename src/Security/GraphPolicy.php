@@ -77,13 +77,22 @@ final class GraphPolicy
      * first kind added to the package after you wrote it is permitted by
      * default. An allowlist fails the other way, which is the correct way.
      *
-     * Empty by design — the caller names what it wants to permit, because only
-     * the caller knows. `Builtin` cannot guess which of its own kinds are safe
-     * in someone else's app.
+     * The caller names what it wants to permit, because only the caller knows.
+     * `Builtin` cannot guess which of its own kinds are safe in someone else's
+     * app — so the list is a REQUIRED argument rather than something you are
+     * trusted to remember to chain.
+     *
+     * It used to default to an *absent* list, and absent meant "permit
+     * everything": a caller who forgot `allowKinds()` got a policy named
+     * `untrusted` that restricted no kind at all, silently, while reading as
+     * though it were locked down. That is the failure this method exists to
+     * prevent, so it can no longer be expressed.
+     *
+     * @param  list<string>  $allowKinds  Every kind the graph may use.
      */
-    public static function untrusted(): self
+    public static function untrusted(array $allowKinds): self
     {
-        return new self();
+        return (new self())->allowKinds($allowKinds);
     }
 
     /** Caps only, no kind policy — for graphs your own code produced. */
