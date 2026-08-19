@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FancyFlow\Laravel\Jobs;
 
 use FancyFlow\Laravel\Events\WorkflowFailed;
+use FancyFlow\Laravel\Events\HumanInputRequested;
 use FancyFlow\Laravel\Events\WorkflowSettled;
 use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
@@ -189,6 +190,11 @@ final class RunNodeJob implements ShouldQueue
                 // knows how long the whole run has been going.
                 initialInputs: RunSetup::initialInputs($run),
                 resumeOutputs: NodeClaims::outputs($rows),
+                // Per NODE, off the claim row — not per run. This is the only
+                // place in the suite where `attempt` and the first-attempt clock
+                // are EXACT rather than conservative, and they are what a writing
+                // connector checks a provider's idempotency window against.
+                run: RunSetup::identityFor($run, $rows, $nodeId),
             ),
             runId: $run->run_key,
         );
@@ -217,6 +223,17 @@ final class RunNodeJob implements ShouldQueue
                 'awaiting_kind' => $pause->awaiting,
                 'awaiting_detail' => $pause->detail,
             ])->save();
+
+            // FIRE THE REQUEST, then finish. This is the whole of "a waiting
+            // human holds no worker": the job's work at a gate is to ask, and
+            // asking is done the moment this event is dispatched. The job
+            // returns; the answer, whenever it arrives, enqueues the next one.
+            $events->dispatch(new HumanInputRequested(
+                $this->runKey,
+                $pause->nodeId,
+                $pause->awaiting,
+                $pause->detail,
+            ));
 
             $events->dispatch(new WorkflowSettled($this->runKey, match ($pause->awaiting) {
                 'approval' => WorkflowSettled::AWAITING_APPROVAL,

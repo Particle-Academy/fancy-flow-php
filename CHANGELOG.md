@@ -8,6 +8,87 @@ upgrading.
 
 ---
 
+## 0.19.0 — 2026-08-19
+
+### Added
+
+- **`RunIdentity` on the execution context, so a node that WRITES can send an
+  idempotency key.** `ExecutionContext::$run` is new, and
+  `$ctx->run->stepKey($ctx->node->id)` is the key.
+
+  Until now the context was `{node, inputs, emit, depth}`, and nothing in it
+  could produce a key that is the same on a retry and different on a different
+  execution. So every writing connector shipped `unsafe-to-replay` with no key
+  at all — meaning **a timed-out payment could never be retried**, because
+  retrying it would charge the card a second time.
+
+  What identifies a step is deliberately **not** `(run, node)`: a node
+  legitimately runs many times in one run — once per subflow invocation, once
+  per loop iteration an executor drives. So the key is the run key plus the
+  *path of invocations* that led here, plus an optional occurrence:
+  `run_9f2c:billing/pay#3`. `attempt` is carried on the identity and is
+  **deliberately absent from the key**; folding it in restores the exact bug the
+  key exists to prevent.
+
+  `isReplaySafe($windowSeconds, $now)` answers the other half. Providers forget
+  keys (Stripe after 24h), and past that window resending the key and sending a
+  fresh one BOTH write twice — so a caller must refuse, loudly, rather than
+  choose. Attempt 1 is always safe, which is what lets a run park on a human
+  gate for a week and then write.
+
+  Under `per_node`, `attempt` and the first-attempt clock come off the node's
+  own **claim row**, so they are exact. The clock is `created_at`, not
+  `claimed_at`: `claimed_at` is refreshed on every reclaim, so a retry 25 hours
+  late would report itself as seconds old and reuse a key the provider had
+  already forgotten. Under `single` the identity is run-scoped and therefore
+  conservative — it can only make a window check refuse where `per_node` would
+  allow, which is the safe direction.
+
+  Pinned across PHP, TypeScript and Python by `shared/flow-run-identity` in
+  `particle-academy/fancy-conformance` (25 rows).
+
+  *Consumer action: none required.* `$ctx->run` is nullable and `null` when a
+  host passes no `run` option; existing executors are unaffected. Durable runs
+  get it for free — both drivers now supply one. For a synchronous
+  `FlowRunner::run()`, pass `new RunOptions(run: $yourStableRunKey)`. It is
+  **deliberately not defaulted**: a key minted per call changes on every
+  whole-run retry, which is the failure it exists to prevent.
+
+- **`Laravel\Events\HumanInputRequested` — the moment to go and ask.**
+  Dispatched by both queue drivers when a run parks on a gate, carrying
+  `runId`, `nodeId`, `awaiting` and the kind's `detail` (the form schema, the
+  question).
+
+  `WorkflowSettled` already reported that an attempt ended awaiting a human, but
+  not which node or what it was asking — so a host wanting to send the email had
+  to re-query the run and re-derive the form. That is the kind of obvious next
+  step that goes unbuilt, leaving a run parked forever because nobody was ever
+  told.
+
+  This is also the step-wise contract stated out loud: the job that reaches a
+  gate does its work by FIRING THE REQUEST and then finishing. No worker,
+  connection or process is held while a person — who may not be logged in, or
+  anywhere near the interface — takes days to answer. The inbound answer is what
+  enqueues the continuation.
+
+  *Consumer action: none.* A new event nobody is listening for changes nothing;
+  `Event::listen(HumanInputRequested::class, ...)` to use it.
+
+- **`RunOptions::$run`** and **`RunSetup::identityFor()`**, the seams the above
+  travel through. `subflow` and `subgraph` push the invoking node onto the
+  identity path, so a node inside a child graph cannot share a key with a
+  same-named node in the parent.
+
+### Changed
+
+- **`human_approval` now pauses with a detail** — `{title, description}` — where
+  it previously passed none. The TypeScript and Python twins have always carried
+  one, so this closes a three-runtime divergence, and it is what makes
+  `HumanInputRequested` useful for an approval rather than only for a form.
+
+  *Consumer action: none, unless you assert on `awaiting_detail` for an approval
+  node — it changes from `null` to an array.* Nothing routes on it.
+
 ## 0.18.0 — 2026-08-18
 
 ### Security

@@ -6,12 +6,14 @@ namespace FancyFlow\Laravel\Jobs;
 
 use FancyFlow\Laravel\Events\WorkflowFailed;
 use FancyFlow\Laravel\Events\WorkflowFinished;
+use FancyFlow\Laravel\Events\HumanInputRequested;
 use FancyFlow\Laravel\Events\WorkflowSettled;
 use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Runs\RunSetup;
 use FancyFlow\Laravel\TriggerCohort;
 use FancyFlow\Runtime\Pause;
+use FancyFlow\Runtime\RunIdentity;
 use FancyFlow\Runtime\RunOptions;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -168,6 +170,13 @@ final class RunWorkflowJob implements ShouldQueue
             timeoutMs: config('fancy-flow.timeout_ms'),
             initialInputs: RunSetup::initialInputs($run),
             resumeOutputs: $run->node_outputs ?? [],
+            // RUN-scoped, and honestly so. The single driver has no per-node
+            // row, so every node in this attempt is told the run's attempt
+            // number. That is conservative rather than wrong: it can only make
+            // a connector's idempotency-window check REFUSE where the per-node
+            // driver would have allowed, and refusing is the safe direction.
+            // A host that wants exactness runs `per_node`, which is the default.
+            run: (new RunIdentity($run->run_key))->withAttempt(max(1, $run->attempts)),
         );
         $executors = RunSetup::executors($flow, $run);
 
@@ -217,6 +226,17 @@ final class RunWorkflowJob implements ShouldQueue
                 'awaiting_kind' => $pause->awaiting,
                 'awaiting_detail' => $pause->detail,
             ])->save();
+
+            // Ask, then finish. Dispatched by BOTH drivers at the same point,
+            // so a host's notification behaves identically under `single` and
+            // `per_node` — a difference here would surface as "approvals stop
+            // being emailed when we switched drivers".
+            $events->dispatch(new HumanInputRequested(
+                $this->runKey,
+                $pause->nodeId,
+                $pause->awaiting,
+                $pause->detail,
+            ));
 
             $outcome = match ($pause->awaiting) {
                 'approval' => WorkflowSettled::AWAITING_APPROVAL,

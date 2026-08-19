@@ -25,12 +25,19 @@ final class ExecutionContext
      * @param Closure(RunEvent):void  $emit
      * @param int                     $depth how deep this run is nested; `subflow`
      *        reads it to enforce a depth limit and passes depth + 1 to its child.
+     * @param RunIdentity|null        $run   who is running, and which attempt of which step
+     *        this is. `$ctx->run->stepKey($ctx->node->id)` is the idempotency key for a node
+     *        that writes to somebody else's system — stable across retries of this step,
+     *        distinct for every other execution of the same node. NULL when the host supplied
+     *        no identity, and that is a real answer: a write with no key must decline or
+     *        accept one attempt, never invent a key.
      */
     public function __construct(
         public readonly FlowNode $node,
         public readonly array $inputs,
         private readonly Closure $emit,
         public readonly int $depth = 0,
+        public readonly ?RunIdentity $run = null,
     ) {}
 
     /** Stop the run. Throws {@see RunAborted}; the runner records the reason. */

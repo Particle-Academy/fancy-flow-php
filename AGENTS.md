@@ -25,7 +25,17 @@ Node and PHP. Don't break it.
   node id → kind → `*`.
 - `Contracts\TriggerGuard` — the precondition a cohort run re-checks just before
   it starts. Fails CLOSED by design; see `Laravel\TriggerCohort`.
-- `Runtime\{ExecutionContext, RunEvent, RunOptions, RunResult, Port, ...}`.
+- `Runtime\{ExecutionContext, RunEvent, RunOptions, RunResult, Port, RunIdentity, ...}`.
+  **`RunIdentity` is what a WRITING node keys an idempotent call on.**
+  `$ctx->run?->stepKey($ctx->node->id)` is the same on every retry of one step
+  and different for every other execution of the same node — which is why
+  `attempt` is carried on it and is NOT part of the key. `(run, node)` alone is
+  insufficient: a node runs once per subflow invocation and once per loop
+  iteration, so the key composes the invocation `path` and an optional
+  `occurrence`. `isReplaySafe()` says whether a retry is still inside the
+  provider's dedup window; past it the caller must REFUSE, because resending
+  the key and minting a fresh one both write twice. Pinned by
+  `shared/flow-run-identity`; the other two runtimes implement the same table.
 - `Nodes\<Domain>\*Executor` — the 26 default executors, grouped by domain.
 - `Nodes\Support\*` — injectable client interfaces + deterministic fakes + the
   `Expr` `{{ path }}` resolver (safe, no arbitrary eval).
@@ -79,7 +89,25 @@ silently:
    branch.
 3. **The claim is a unique constraint, not a check.** `(run_key, node_id)` +
    `insertOrIgnore`. A lost race is a NO-OP. The `owner` token is what lets a
-   job's own retry re-enter its claim instead of deadlocking against it.
+   job's own retry re-enter its claim instead of deadlocking against it — and it
+   is also what makes the retry's idempotency key identical to the first
+   attempt's, since both read the same row.
+
+A fourth rule now sits beside them, about time rather than concurrency:
+
+4. **The retry clock is `created_at`, never `claimed_at`.**
+   `WorkflowRunNode::firstAttemptAt()` is what an idempotency window is measured
+   from, and `claimed_at` is refreshed on every reclaim — so reading it would
+   report a retry 25 hours late as seconds old and reuse a key the provider had
+   already forgotten. `RunIdentityPerNodeTest` travels the clock thirteen hours
+   between attempts precisely because three attempts inside one second pass
+   whichever column is read.
+
+**A human gate holds no worker.** `RunNodeJob` reaching a gate records the
+pause, dispatches `Events\HumanInputRequested` — the request itself, carrying
+the node and the kind's detail — and RETURNS. Nothing on the server waits for a
+person. `WorkflowRun::approve()` / `submitInput()` is what enqueues the
+continuation, so the inbound answer starts the next job.
 
 ## Conventions
 

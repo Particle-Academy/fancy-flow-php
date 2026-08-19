@@ -156,7 +156,7 @@ final class FlowRunner
             }
 
             try {
-                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth);
+                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run);
                 $result = $exec($ctx);
                 $this->publish($node, $result, $outputs, $portValues, $completed, $emit);
             } catch (Throwable $e) {

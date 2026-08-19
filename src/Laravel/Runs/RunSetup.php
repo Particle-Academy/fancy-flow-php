@@ -9,6 +9,7 @@ use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Nodes\DurableApprovalExecutor;
 use FancyFlow\Laravel\Nodes\DurableUserInputExecutor;
+use FancyFlow\Runtime\RunIdentity;
 
 /**
  * The two things every durable run needs before the engine sees it, in one
@@ -53,6 +54,33 @@ final class RunSetup
         }
 
         return $initial;
+    }
+
+    /**
+     * The identity handed to ONE node about to execute.
+     *
+     * `attempt` and `firstAttemptAt` come off that node's CLAIM ROW rather than
+     * off the run, and the difference is the point: a node executing for the
+     * first time on a run's third attempt is on ITS attempt 1, and a window
+     * check that read the run's attempt would refuse a write nothing had ever
+     * sent. Only the per-node driver can be exact here, because only it has a
+     * per-node row.
+     *
+     * With no row yet (the claim is taken before this is called, so this is the
+     * defensive branch) the run-scoped identity is returned unchanged.
+     *
+     * @param iterable<\FancyFlow\Laravel\Models\WorkflowRunNode> $rows
+     */
+    public static function identityFor(WorkflowRun $run, iterable $rows, string $nodeId): RunIdentity
+    {
+        foreach ($rows as $row) {
+            if ($row->node_id === $nodeId) {
+                return (new RunIdentity($run->run_key))
+                    ->withAttempt($row->attempts, $row->firstAttemptAt());
+            }
+        }
+
+        return new RunIdentity($run->run_key);
     }
 
     /**

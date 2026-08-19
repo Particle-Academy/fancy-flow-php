@@ -82,4 +82,38 @@ class WorkflowRunNode extends Model
     {
         return in_array($this->status, self::SETTLED, true);
     }
+
+    /**
+     * When this node was FIRST attempted — the clock an idempotency window is
+     * measured from.
+     *
+     * `created_at` rather than `claimed_at`, and the difference is the whole
+     * point: `claimed_at` is refreshed on every reclaim, so it moves with the
+     * retry and would report a 25-hour-old first attempt as seconds ago. The
+     * row is inserted once per logical attempt sequence and only ever updated
+     * after that, so `created_at` is exactly "when attempt 1 began".
+     *
+     * A resumed human gate is the deliberate exception: {@see NodeClaims::clearPaused()}
+     * DELETES the paused row, so the node's re-execution genuinely is a first
+     * attempt and gets a fresh clock. That is correct — nothing was sent to a
+     * provider while the run was parked.
+     *
+     * `FancyFlow\Tests\Durable\RunIdentityPerNodeTest` pins both halves.
+     */
+    public function firstAttemptAt(): string
+    {
+        $at = $this->created_at ?? $this->claimed_at;
+
+        if (! $at instanceof \DateTimeInterface) {
+            return (string) $at;
+        }
+
+        // Normalised to UTC before the `Z` is appended. An app on a local
+        // timezone would otherwise stamp a local time with a UTC marker, and
+        // the retry window would be read hours out — in whichever direction
+        // makes a double charge more likely.
+        return \DateTimeImmutable::createFromInterface($at)
+            ->setTimezone(new \DateTimeZone('UTC'))
+            ->format('Y-m-d\TH:i:s.v\Z');
+    }
 }

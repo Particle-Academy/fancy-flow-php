@@ -55,7 +55,17 @@ final class DurableApprovalExecutor implements NodeExecutor
             if ($ctx->option('autoAnswerFromInput', false) === true && $prefilled !== null) {
                 $decision = $prefilled;
             } else {
-                $ctx->pauseForHuman('approval');
+                // Carry what the request is ABOUT, not just that there is one.
+                // A host listening for HumanInputRequested has to put something
+                // in the email, and re-deriving the node's title from the graph
+                // is the kind of obvious-next-step that goes unbuilt — leaving a
+                // run parked forever because nobody was ever told what for.
+                // Matches the TypeScript and Python twins, which have always
+                // passed a detail here.
+                $ctx->pauseForHuman('approval', array_filter([
+                    'title' => $ctx->option('title', 'Approve action'),
+                    'description' => $ctx->option('description'),
+                ], static fn ($v) => $v !== null));
             }
         }
 

@@ -43,6 +43,7 @@ final class SubgraphExecutor implements NodeExecutor
             options: new RunOptions(
                 initialInputs: $this->seedEntryNodes($import->graph, $ctx->inputs),
                 depth: $ctx->depth + 1,
+                run: $ctx->run?->descend($ctx->node->id),
             ),
         );
 
