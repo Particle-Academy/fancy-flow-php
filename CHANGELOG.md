@@ -8,6 +8,65 @@ upgrading.
 
 ---
 
+## 0.20.0 — 2026-08-20
+
+### Added
+
+- **A node-level failure now says WHICH node failed.** `RunResult->error` and the
+  emitted error events carry the node, and a new `NodeExecutionException` carries
+  it as data rather than only in the string:
+
+  ```
+  node "Draft the summary" (n-42, @particle-academy/llm_call): StructuredOutput
+  truncated — raise max_tokens or narrow the schema
+  ```
+
+  ```php
+  catch (NodeExecutionException $e) {
+      $e->nodeId;      // 'n-42'
+      $e->nodeLabel;   // 'Draft the summary'
+      $e->nodeKind;    // the kind that was executing
+      $e->getPrevious(); // the original, untouched
+  }
+  ```
+
+  Reported by a consumer running an Op with several `llm_call` nodes. The
+  truncation message is a good one — it names the cause and says to raise
+  `max_tokens` or narrow the schema — and it never said WHOSE `max_tokens`, so
+  they bisected a composed Op to find out. The emitted events already carried
+  `$node->id`; `RunResult->error` and anything catching on the durable path did
+  not.
+
+  It decorates at the RUNNER, not at the throw site, so **every** node-level
+  failure gains attribution — including from executors that know nothing about
+  this class. That was the reporter's own preference and it is the right one:
+  threading an id through each executor that can fail would have covered the
+  failure that prompted it and missed the next one.
+
+  **What a consumer must DO:** nothing, unless you match on the exact text of
+  `RunResult->error`. If you do, it now has `node …: ` in front of the original
+  message; match on the original with `str_contains()`, or read `nodeId` off the
+  exception, which is why it is there.
+
+  **Not a retry, deliberately.** A truncated structured response decodes to
+  nothing and is indistinguishable from a model that legitimately found no
+  results, so retrying or coercing would silently process zero records. The
+  0.15.0 reasoning stands untouched; the only defect was not saying where.
+
+### Fixed
+
+- **`abort()` and `pauseForHuman()` are never decorated.** They are control flow,
+  not failure: `abort()` carries its reason verbatim, and `pauseForHuman()` aborts
+  with a `Pause::encode()` payload that the durable layer decodes back out of the
+  message. Prefixing that payload does not merely read oddly — it stops it being
+  decodable, so a run that should be parked waiting on a person is recorded as an
+  unrecognised error and is dead.
+
+  Caught while building the change above, which initially wrapped every
+  `Throwable`: 72 tests went red and the ones that mattered were not the string
+  comparisons but "it asserts a pause". Both cases are now pinned by tests that
+  assert the pause still DECODES, rather than asserting on its text.
+
 ## 0.19.0 — 2026-08-19
 
 ### Added

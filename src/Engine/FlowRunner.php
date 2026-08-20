@@ -6,6 +6,7 @@ namespace FancyFlow\Engine;
 
 use Closure;
 use FancyFlow\ExecutorRegistry;
+use FancyFlow\Exceptions\NodeExecutionException;
 use FancyFlow\Exceptions\RunAborted;
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Registry\KindId;
@@ -159,8 +160,29 @@ final class FlowRunner
                 $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run);
                 $result = $exec($ctx);
                 $this->publish($node, $result, $outputs, $portValues, $completed, $emit);
-            } catch (Throwable $e) {
+            } catch (RunAborted $e) {
+                // CONTROL FLOW, NOT A FAILURE — never decorate this message.
+                // `abort()` carries the reason verbatim, and `pauseForHuman()`
+                // aborts with a `Pause::encode()` payload that the durable layer
+                // decodes straight back out of the message. Prefixing it turns a
+                // pause into an unrecognised error, and the run that should be
+                // waiting on a person is simply dead instead.
                 $msg = $e->getMessage();
+                $errors[] = $msg;
+                $emit(RunEvent::nodeStatus($node->id, NodeStatus::ERROR, $msg));
+                $emit(RunEvent::log('error', $msg, $node->id));
+
+                break;
+            } catch (Throwable $e) {
+                // A genuine executor failure: attribute it to the node that was
+                // running. The emitted events already carried $node->id, but
+                // RunResult->error and anything catching on the durable path saw
+                // the message alone -- so a good message like "raise max_tokens"
+                // arrived without saying WHICH node's, and the author bisected a
+                // composed Op to find out. Wrapping here covers every executor,
+                // including ones that know nothing about this exception.
+                $failure = NodeExecutionException::at($node->id, $node->type, $node->label, $e);
+                $msg = $failure->getMessage();
                 $errors[] = $msg;
                 $emit(RunEvent::nodeStatus($node->id, NodeStatus::ERROR, $msg));
                 $emit(RunEvent::log('error', $msg, $node->id));
