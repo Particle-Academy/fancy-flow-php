@@ -157,9 +157,15 @@ final class FlowRunner
             }
 
             try {
-                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run);
+                self::announce($emit, $node, 'start');
+                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run, $executors);
                 $result = $exec($ctx);
                 $this->publish($node, $result, $outputs, $portValues, $completed, $emit);
+                // Success path only, and deliberately so: a `stoppingMsg` of
+                // "Analysis complete" emitted after a throw tells a human the
+                // opposite of what happened, in the part of the UI they trust
+                // most. Failures report through node-status and log.
+                self::announce($emit, $node, 'end');
             } catch (RunAborted $e) {
                 // CONTROL FLOW, NOT A FAILURE — never decorate this message.
                 // `abort()` carries the reason verbatim, and `pauseForHuman()`
@@ -394,4 +400,33 @@ final class FlowRunner
     {
         return (hrtime(true) - $startNs) / 1_000_000;
     }
+
+    /**
+     * Emit a node's own status message for one phase, if it declared one.
+     *
+     * Opt-in by absence: a node with no `startingMsg` / `stoppingMsg` says
+     * nothing, because most nodes in a graph are plumbing and narrating all of
+     * them buries the steps a person actually follows.
+     *
+     * A message must be non-empty after trimming. A blank field is the shape a
+     * cleared editor input takes, and a blank line in a progress feed cannot be
+     * told apart from a real message that happens to render as nothing.
+     *
+     * @param 'start'|'end' $phase
+     */
+    private static function announce(callable $emit, FlowNode $node, string $phase): void
+    {
+        $raw = $phase === 'start' ? $node->startingMsg : $node->stoppingMsg;
+        if ($raw === null) {
+            return;
+        }
+
+        $message = trim($raw);
+        if ($message === '') {
+            return;
+        }
+
+        $emit(RunEvent::nodeMessage($node->id, $phase, $message));
+    }
+
 }

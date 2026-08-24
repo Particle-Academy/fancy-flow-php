@@ -97,6 +97,8 @@ final class Workflow
                 y: (float) ($raw['position']['y'] ?? 0),
                 label: $raw['label'] ?? $kind?->label ?? $kindName,
                 description: isset($raw['description']) ? (string) $raw['description'] : null,
+                startingMsg: isset($raw['startingMsg']) ? (string) $raw['startingMsg'] : null,
+                stoppingMsg: isset($raw['stoppingMsg']) ? (string) $raw['stoppingMsg'] : null,
                 config: $config,
                 // inputs/outputs intentionally left null on import — the engine
                 // then defaults to a single `out` port, matching the TS import.
@@ -196,6 +198,15 @@ final class Workflow
         }
         if ($node->description !== null) {
             $out['description'] = $node->description;
+        }
+        // Omitted entirely when unset, so a graph of ordinary plumbing nodes
+        // does not carry a pair of empty keys per node and every diff of a
+        // saved graph stays readable.
+        if ($node->startingMsg !== null && trim($node->startingMsg) !== '') {
+            $out['startingMsg'] = $node->startingMsg;
+        }
+        if ($node->stoppingMsg !== null && trim($node->stoppingMsg) !== '') {
+            $out['stoppingMsg'] = $node->stoppingMsg;
         }
         if ($node->config !== []) {
             $out['config'] = $node->config;

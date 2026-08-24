@@ -30,6 +30,19 @@ final class FlowNode
         public readonly float $y = 0.0,
         public readonly ?string $label = null,
         public readonly ?string $description = null,
+        /**
+         * Announced to a person just BEFORE this node runs -- "Starting the
+         * deep analysis". Optional on purpose: most nodes in a graph are
+         * plumbing, and a run that narrates all of them buries the two or
+         * three steps anyone follows.
+         */
+        public readonly ?string $startingMsg = null,
+        /**
+         * Announced AFTER this node finishes -- "Analysis complete". Emitted
+         * only when the node SUCCEEDS: a completion message printed after a
+         * failure tells a human the opposite of what happened.
+         */
+        public readonly ?string $stoppingMsg = null,
         public readonly array $config = [],
         public readonly ?array $inputs = null,
         public readonly ?array $outputs = null,

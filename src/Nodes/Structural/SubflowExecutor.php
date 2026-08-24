@@ -157,7 +157,11 @@ final class SubflowExecutor implements NodeExecutor
 
         $result = (new FlowRunner())->run(
             $child,
-            $this->executors ?? Builtin::executors($this->deps),
+            // Inherited first: the registry the PARENT is running with, so a
+            // host kind resolves at every depth. An explicitly injected
+            // registry still wins for a caller that constructed this executor
+            // deliberately; the bare builtins remain only as the last resort.
+            $ctx->executors ?? $this->executors ?? Builtin::executors($this->deps),
             $forward,
             new RunOptions(
                 initialInputs: $this->childInputs($config, $child, $ctx->inputs),

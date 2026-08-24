@@ -9,12 +9,14 @@ namespace FancyFlow\Runtime;
  * discriminated union — one class with a `type` tag and the union of payload
  * fields. Build them with the named factories; serialize with {@see toArray()}.
  *
- * Types: `run-start`, `node-status`, `node-output`, `log`, `run-end`, `run-error`.
+ * Types: `run-start`, `node-status`, `node-message`, `node-output`, `log`, `run-end`,
+ * `run-error`.
  */
 final class RunEvent
 {
     public const RUN_START = 'run-start';
     public const NODE_STATUS = 'node-status';
+    public const NODE_MESSAGE = 'node-message';
     public const NODE_OUTPUT = 'node-output';
     public const LOG = 'log';
     public const RUN_END = 'run-end';
@@ -25,6 +27,7 @@ final class RunEvent
         public readonly ?string $nodeId = null,
         public readonly ?string $status = null,
         public readonly ?string $text = null,
+        public readonly ?string $phase = null,
         public readonly ?string $portId = null,
         public readonly mixed $value = null,
         public readonly ?string $level = null,
@@ -42,6 +45,20 @@ final class RunEvent
     public static function nodeStatus(string $nodeId, string $status, ?string $text = null): self
     {
         return new self(self::NODE_STATUS, nodeId: $nodeId, status: $status, text: $text);
+    }
+
+    /**
+     * A node's own human-facing announcement, from `startingMsg` /
+     * `stoppingMsg`. Deliberately NOT folded into `nodeStatus`'s `$text`,
+     * which already carries "skipped", "resumed", "lane" and raw error
+     * strings -- a progress feed cannot be asked to guess which of those are
+     * addressed to a person.
+     *
+     * @param 'start'|'end' $phase
+     */
+    public static function nodeMessage(string $nodeId, string $phase, string $message): self
+    {
+        return new self(self::NODE_MESSAGE, nodeId: $nodeId, phase: $phase, message: $message);
     }
 
     public static function nodeOutput(string $nodeId, string $portId, mixed $value): self

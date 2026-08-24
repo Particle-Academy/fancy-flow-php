@@ -6,6 +6,7 @@ namespace FancyFlow\Runtime;
 
 use Closure;
 use FancyFlow\Exceptions\RunAborted;
+use FancyFlow\ExecutorRegistry;
 use FancyFlow\Schema\FlowNode;
 
 /**
@@ -38,6 +39,24 @@ final class ExecutionContext
         private readonly Closure $emit,
         public readonly int $depth = 0,
         public readonly ?RunIdentity $run = null,
+        /**
+         * The registry THIS run is executing against.
+         *
+         * Handed down so an executor that starts a NESTED run gives the child
+         * the same executors as the parent. `SubflowExecutor` previously fell
+         * back to `Builtin::executors()` — the BARE builtins — because the
+         * composed registry does not exist yet when `Builtin::executors()`
+         * constructs it, and nothing could be passed at that point. The child
+         * therefore lost every host executor, the `agent` binding and the
+         * container resolver: a host kind resolved at top level and vanished
+         * one level down, and a host that had REPLACED a builtin got the
+         * package's version inside the child (issue #7).
+         *
+         * Inheriting through the context rather than through construction is
+         * what makes it unforgettable — any future nesting executor gets it
+         * without opting in.
+         */
+        public readonly ?ExecutorRegistry $executors = null,
     ) {}
 
     /** Stop the run. Throws {@see RunAborted}; the runner records the reason. */
