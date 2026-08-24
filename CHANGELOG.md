@@ -8,6 +8,41 @@ upgrading.
 
 ---
 
+## 0.23.0 — 2026-08-24
+
+### Added
+
+- **`FancyFlow\Testing\QueuePump` — drain a faked queue the way a worker
+  would, and stop wherever you like.**
+
+  Testing a durable run by starting a REAL worker introduces a race that has
+  nothing to do with the code under test: a worker launched with
+  `--stop-when-empty` can find the queue momentarily empty, exit having done
+  nothing, and leave the assertion reading `running`. The gap widens with load,
+  so it surfaces only in longer suites — it looks like flakiness and behaves
+  like a threshold.
+
+  A consumer measured exactly that, and their conclusion is the one worth
+  carrying: **a test that fails only under load is usually measuring the
+  harness.** They had carried two such failures as a known upstream bug for
+  months; adopting this took them from 2-of-250 failing on three runs out of
+  three to 250 passing, twice.
+
+  This is stronger than a real worker rather than merely safer. `sync` always
+  runs the advance → node → advance chain to completion, so *"the worker died
+  here"* cannot be expressed at all; draining by hand and stopping after N node
+  jobs means **stopping IS the kill**, and the run is left exactly as an
+  interrupted worker would leave it — which is how you assert an abandoned
+  frontier or a retry re-entering its own claim.
+
+  It was already the technique this package's own per-node suite used, as a
+  function inside a test file. Consumers were therefore being told to copy code
+  out of our tests to exercise the durable layer's primary testing path. It now
+  ships in `src/`, and the suite drives itself through the same class, so it
+  cannot drift from the documentation.
+
+---
+
 ## 0.22.0 — 2026-08-24
 
 ### Fixed

@@ -11,6 +11,7 @@ use FancyFlow\Laravel\Jobs\RunWorkflowJob;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Models\WorkflowRunNode;
 use FancyFlow\Runtime\ExecutionContext;
+use FancyFlow\Testing\QueuePump;
 use FancyFlow\Workflow;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
@@ -113,39 +114,16 @@ final class PnLog
  */
 function pnPump(int $maxNodes = PHP_INT_MAX): int
 {
-    $ran = 0;
-
-    while (true) {
-        $progress = false;
-
-        foreach ([RunNodeJob::class, AdvanceWorkflowJob::class] as $class) {
-            $jobs = Queue::pushed($class)->values();
-
-            while ((PnLog::$cursor[$class] ?? 0) < $jobs->count()) {
-                if ($class === RunNodeJob::class && $ran >= $maxNodes) {
-                    return $ran;
-                }
-
-                $index = PnLog::$cursor[$class] ?? 0;
-                PnLog::$cursor[$class] = $index + 1;
-
-                app()->call([$jobs[$index], 'handle']);
-                $progress = true;
-
-                if ($class === RunNodeJob::class) {
-                    $ran++;
-                }
-            }
-        }
-
-        if (! $progress) {
-            return $ran;
-        }
-    }
+    // Delegates to the SHIPPED utility. Consumers were being told to copy this
+    // function out of our test suite, which is a poor answer for the durable
+    // layer's primary testing technique -- so it moved to src/ and this suite
+    // now exercises the same code a consumer gets.
+    return QueuePump::drain($maxNodes);
 }
 
 beforeEach(function () {
     PnLog::reset();
+    QueuePump::reset();
 });
 
 // ── the shape of a per-node run ────────────────────────────────────────────

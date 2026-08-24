@@ -397,9 +397,15 @@ express. Fake the queue instead and drain it yourself, in the order a worker
 would — pending node jobs, then the advances they queued — stopping after N:
 
 ```php
+use FancyFlow\Testing\QueuePump;
+
 Queue::fake();
-// ... start the run ...
-pump(maxNodes: 2);   // walk Queue::pushed(RunNodeJob::class) / AdvanceWorkflowJob::class
+QueuePump::reset();            // per test -- the cursor is static
+
+FancyFlow::dispatch($schema);
+
+QueuePump::drain();            // run it out
+QueuePump::drain(maxNodes: 2); // ...or kill the worker after two nodes
 ```
 
 **Stopping IS the kill.** The run is left in exactly the state a worker would
@@ -407,8 +413,9 @@ have left it, which is how the per-node tests assert an abandoned frontier, a
 half-settled run, or a retry re-entering its own claim. A real worker cannot be
 made to stop on demand at a chosen node; this can.
 
-See `tests/Durable/PerNodeRunTest.php` (`pnPump()`) for a working drain — it
-depends on nothing beyond the two job classes.
+`QueuePump` is shipped in `src/`, not a snippet to copy: the per-node suite in
+this package drives itself through the same class you get, so it cannot drift
+from what is documented here.
 
 ### One trigger, several workflows
 
