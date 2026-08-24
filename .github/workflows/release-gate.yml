@@ -1,0 +1,62 @@
+name: Release gate
+
+# Fires on a version tag. Packagist syncs from the tag on its own, so unlike
+# the npm publish workflow this CANNOT PREVENT a release — by the time this
+# runs, the version is already resolvable by consumers.
+#
+# It is still worth having, and the reason is asymmetric with npm:
+#
+#   - On npm the tarball is immutable, so a missing changelog entry can never
+#     be repaired. The gate there must block, and does.
+#   - On Packagist the changelog is served FROM THE REPO, so an entry added
+#     after the tag is read by everyone who looks. Detection is therefore a
+#     complete fix here, where it would not be on npm.
+#
+# What this replaces is silence. `particle-academy/fancy-flow-php` v0.21.0 was
+# tagged and pushed with no changelog entry at all: the release script matched
+# on `## [Unreleased]`, that file uses `## 0.20.0 — date` and has no Unreleased
+# section, so the edit did nothing and said nothing. A consumer sitting on
+# 0.16.0 was deciding whether to take five minors, and the changelog is the
+# whole basis for that decision — they told us afterwards they would have
+# concluded the release was empty and stayed put, had they not happened to
+# diff the compare API instead.
+#
+# A red build within a minute of the tag is the difference between that and
+# finding out from the consumer.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Changelog entry for this tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert the tagged version is documented
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::No CHANGELOG.md. Every package keeps one."
+            exit 1
+          fi
+
+          # Accept both house styles: `## 1.2.3 — date` and Keep a Changelog's
+          # `## [1.2.3] - date`. Matching only one is how the miss above
+          # happened in the first place -- a tool that assumes a format it does
+          # not check is a tool that fails quietly on the other one.
+          if ! grep -qE "^## +\[?v?${VERSION}\]?" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no entry for ${VERSION}."
+            echo "::error::Add one -- say what a consumer must DO, not just what changed."
+            echo "::error::Packagist has already published this tag; the entry is still read from the repo, so fix it on main now."
+            exit 1
+          fi
+
+          echo "Found a changelog entry for ${VERSION}."
