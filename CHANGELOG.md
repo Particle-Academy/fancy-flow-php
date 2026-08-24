@@ -8,6 +8,59 @@ upgrading.
 
 ---
 
+## 0.21.0 — 2026-08-24
+
+### Fixed
+
+- **`subflow` now runs its child against the PARENT's registry** (#7). It fell
+  back to `Builtin::executors($this->deps)` — the bare builtins — because
+  `Builtin::executors()` constructs `new SubflowExecutor($deps)` while the
+  composed registry is still being built, so there was nothing to hand it. The
+  child therefore lost every host executor bound via
+  `config('fancy-flow.executors')`, the `agent` binding, and the
+  `ContainerResolver` the parent had.
+
+  A host kind resolved at top level and vanished one level down. Worse, a host
+  that had REPLACED a builtin — `llm_call` with its own tenancy, budgeting or
+  token accounting — got the package's version inside the child: the same graph
+  behaving two ways depending on nesting depth. Nothing warned, because an
+  unregistered kind fails closed with no outputs.
+
+  The registry now rides on `ExecutionContext::$executors`, so any executor
+  that starts a nested run inherits it without opting in. An explicitly
+  injected registry still wins; the bare builtins remain only as a last resort.
+
+  Reported by a consumer running a real graph. The TypeScript and Python twins
+  had the same defect — TS with a worse default, an EMPTY child registry — and
+  are fixed in `@particle-academy/fancy-flow` 0.49.0 and `fancy-flow` (PyPI)
+  0.2.0. Found by checking parity rather than assuming it, and now pinned by
+  the shared `flow/subflow-registry` conformance table so it cannot drift back
+  in one runtime.
+
+  **What you must do: nothing**, unless you relied on a child having no
+  executors — which was never a documented guarantee and could not be
+  distinguished from this bug.
+
+### Added
+
+- **Per-node status messages.** A `FlowNode` may carry `startingMsg` /
+  `stoppingMsg`; the runner announces them around that node as a new
+  `RunEvent::nodeMessage()` (`node-message`, with a `phase` of `start` or
+  `end`). Carried through `Workflow` import/export, and omitted from the
+  document entirely when unset so a saved graph stays diffable.
+
+  Opt-in per node — most nodes in a graph are plumbing, and narrating all of
+  them buries the two or three steps a person actually follows.
+
+  **`stoppingMsg` fires only when the node SUCCEEDS.** A completion message
+  after a throw tells a human the opposite of what happened, in the part of the
+  UI they trust most; failures continue to report through `node-status` and
+  `log`. Skipped and resumed nodes stay silent too — neither did the work.
+
+  Matches `@particle-academy/fancy-flow` 0.49.0 and `fancy-flow` (PyPI) 0.2.0.
+
+---
+
 ## 0.20.0 — 2026-08-20
 
 ### Added
