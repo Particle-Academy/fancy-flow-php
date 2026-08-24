@@ -6,6 +6,8 @@ namespace FancyFlow\Laravel\Runs;
 
 use FancyFlow\Laravel\Models\WorkflowRunNode;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * The claim. One node of one run belongs to exactly one worker, and the
@@ -174,6 +176,33 @@ final class NodeClaims
     public static function pause(string $runKey, string $nodeId): void
     {
         self::settle($runKey, $nodeId, ['status' => WorkflowRunNode::PAUSED]);
+    }
+
+    /**
+     * Settle a node as PAUSED and park the run on it, as ONE unit.
+     *
+     * These were two consecutive writes with no transaction, and the pair is
+     * not like the others: a COMPLETED node's consequences are derivable --
+     * the Frontier recomputes activated ports from the claim row -- but a
+     * paused one's are not. `awaiting_node` / `awaiting_kind` /
+     * `awaiting_detail` live only on the run, so if that write is lost there is
+     * nothing left to reconstruct the gate from.
+     *
+     * A worker dying between the two therefore left an UNRECOVERABLE state:
+     * the node settled as paused, the run still reading `running`. Nothing
+     * re-dispatches a settled node, and a human answering is rejected because
+     * the run is not parked on it. Narrow window, permanent consequence, no
+     * detection -- the exact profile the claim table exists to rule out, whose
+     * premise is that a lost race is a NO-OP.
+     *
+     * @param array<string, mixed> $runValues
+     */
+    public static function pauseAndPark(string $runKey, string $nodeId, Model $run, array $runValues): void
+    {
+        DB::transaction(static function () use ($runKey, $nodeId, $run, $runValues): void {
+            self::settle($runKey, $nodeId, ['status' => WorkflowRunNode::PAUSED]);
+            $run->forceFill($runValues)->save();
+        });
     }
 
     /** Attempts exhausted — this node is why the run fails. */

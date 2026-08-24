@@ -8,6 +8,42 @@ upgrading.
 
 ---
 
+## 0.22.0 — 2026-08-24
+
+### Fixed
+
+- **A pause wrote two rows with no transaction, and a crash between them was
+  unrecoverable.** `RunNodeJob` settled the node claim as `PAUSED` and then, in
+  a separate statement, parked the run (`awaiting_input` plus `awaiting_node` /
+  `awaiting_kind` / `awaiting_detail`). A worker dying in between — OOM, a
+  deploy, a dropped connection — left the node settled while the run still read
+  `running`.
+
+  That state has no way out. Nothing re-dispatches a settled node; a human
+  answering is *rejected*, because the run is not parked on it. And unlike a
+  COMPLETED node — whose activated ports the `Frontier` recomputes from the
+  claim row — a paused node's consequences are not derivable: the `awaiting_*`
+  fields exist only on the run, so losing that write loses the gate entirely.
+
+  The pair is now one operation, `NodeClaims::pauseAndPark()`, inside a
+  transaction — owned by the claim authority, which is where claim/run
+  consistency belongs.
+
+  Narrow window, permanent consequence, no detection: the exact profile the
+  claim table exists to rule out, whose premise is that a lost race is a
+  **no-op**.
+
+  Found while chasing a consumer's report of runs stuck at `running` where
+  `awaiting_input` was expected. **That report was retracted** — their case was
+  worker latency under load, and they proved it by running the same tests on
+  0.19.0 and 0.21.0 in isolation with identical results. But they declined to
+  rule out a genuine pause bug, and taking that non-claim seriously found this
+  one, which is a different defect that nothing had hit yet.
+
+  **What you must do: nothing.**
+
+---
+
 ## 0.21.0 — 2026-08-24
 
 ### Fixed

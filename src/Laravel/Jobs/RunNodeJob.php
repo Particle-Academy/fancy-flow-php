@@ -211,9 +211,13 @@ final class RunNodeJob implements ShouldQueue
         }
 
         if ($pause = Pause::decode($result->error)) {
-            NodeClaims::pause($this->runKey, $nodeId);
-
-            $run->forceFill([
+            // ONE unit. A worker dying between the claim and the run status
+            // used to leave the node settled as paused with the run still
+            // reading `running` -- unrecoverable, because nothing re-dispatches
+            // a settled node and a human answering is rejected for a run that
+            // is not parked. Unlike a completed node, whose ports the Frontier
+            // recomputes, the awaiting_* fields exist only here.
+            NodeClaims::pauseAndPark($this->runKey, $nodeId, $run, [
                 'status' => match ($pause->awaiting) {
                     'approval' => WorkflowRun::AWAITING_APPROVAL,
                     'input' => WorkflowRun::AWAITING_INPUT,
@@ -222,7 +226,7 @@ final class RunNodeJob implements ShouldQueue
                 'awaiting_node' => $pause->nodeId,
                 'awaiting_kind' => $pause->awaiting,
                 'awaiting_detail' => $pause->detail,
-            ])->save();
+            ]);
 
             // FIRE THE REQUEST, then finish. This is the whole of "a waiting
             // human holds no worker": the job's work at a gate is to ask, and
