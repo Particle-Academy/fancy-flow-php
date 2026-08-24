@@ -8,6 +8,40 @@ upgrading.
 
 ---
 
+## 0.24.0 — 2026-08-24
+
+### Added
+
+- **A node's inputs are now addressable by the SOURCE NODE'S ID**, alongside the
+  port, whenever the edge declared no `targetHandle` (fancy-flow-php#8).
+
+  ```
+  {{ in.text }}    // still works, unchanged
+  {{ n2.text }}    // now works too
+  ```
+
+  **The failure this closes is silence, not inconvenience.** Authors reach for
+  node ids — it is how every graph tool addresses nodes, and it is the first
+  thing an assistant generating a graph writes. That resolved to nothing, and
+  *nothing failed*: an unresolvable path yields an empty string, so the node
+  ran, the run reported success, and the damage was output that was quietly
+  wrong. The reporting consumer shipped a `document.md` containing the literal
+  text of its own template, on a green run, and found out when a human opened
+  the file.
+
+  `targetHandle` is unchanged and remains the mechanism for reading something
+  other than the immediate predecessor. The model was never wrong — the obvious
+  spelling just meant nothing.
+
+  **Strictly additive.** The alias is written only for edges that named no
+  handle (an edge that named one said what it meant), and never over a key
+  already present from the host's initial inputs or an earlier edge. A dead
+  branch contributes nothing, as before.
+
+  **What you must do: nothing.**
+
+---
+
 ## 0.23.0 — 2026-08-24
 
 ### Added

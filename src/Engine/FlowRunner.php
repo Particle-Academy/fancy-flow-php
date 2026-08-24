@@ -335,6 +335,17 @@ final class FlowRunner
             $key = $this->portKey($edge->source, $edge->sourceHandle);
             if (array_key_exists($key, $portValues)) {
                 $inputs[$edge->targetHandle ?? 'in'] = $portValues[$key];
+
+                // ALSO addressable by the SOURCE NODE'S ID when the edge named
+                // no handle. Authors write `{{ n2.text }}` first -- it is how
+                // every graph tool addresses nodes -- and that resolved to
+                // nothing while NOTHING FAILED, because an unresolvable path
+                // yields ''. Silent wrong output, on a green run (#8).
+                // Only for handle-less edges, and never clobbering a key that
+                // is already present.
+                if ($edge->targetHandle === null && ! array_key_exists($edge->source, $inputs)) {
+                    $inputs[$edge->source] = $portValues[$key];
+                }
             }
         }
 
