@@ -372,6 +372,44 @@ provide.
 Per-node state is queryable: `$run->nodes()` returns a row per node with its
 status, output, activated ports, and attempt count.
 
+#### Testing a durable run — do not drive a real worker
+
+A real queue worker in a test introduces a race that has nothing to do with the
+code under test: between enqueueing a job and a worker being able to see it
+there is a gap, and a worker started with `--stop-when-empty` can find the queue
+momentarily empty, exit, and leave your assertion reading `running`. It gets
+worse as the surrounding suite gets longer, so it looks like flakiness and
+behaves like a threshold.
+
+**This package's own durable suite never starts one.** Two techniques:
+
+**`sync` for ordinary durable tests.** Set `queue.default = 'sync'` and the
+whole advance → node → advance chain runs inline. No worker, no scheduling, no
+race. Most tests want this.
+
+```php
+$app['config']->set('queue.default', 'sync');
+```
+
+**A faked queue, drained by hand, for anything about worker BEHAVIOUR.** `sync`
+runs the chain to completion, which makes *"the worker died here"* impossible to
+express. Fake the queue instead and drain it yourself, in the order a worker
+would — pending node jobs, then the advances they queued — stopping after N:
+
+```php
+Queue::fake();
+// ... start the run ...
+pump(maxNodes: 2);   // walk Queue::pushed(RunNodeJob::class) / AdvanceWorkflowJob::class
+```
+
+**Stopping IS the kill.** The run is left in exactly the state a worker would
+have left it, which is how the per-node tests assert an abandoned frontier, a
+half-settled run, or a retry re-entering its own claim. A real worker cannot be
+made to stop on demand at a chosen node; this can.
+
+See `tests/Durable/PerNodeRunTest.php` (`pnPump()`) for a working drain — it
+depends on nothing beyond the two job classes.
+
 ### One trigger, several workflows
 
 When a single event fires more than one workflow, dispatch them **together**:
