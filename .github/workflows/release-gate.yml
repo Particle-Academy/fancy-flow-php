@@ -59,4 +59,32 @@ jobs:
             exit 1
           fi
 
-          echo "Found a changelog entry for ${VERSION}."
+          # STRUCTURE, not just presence. The check above only asks whether a
+          # heading for this version exists SOMEWHERE, and both changelog
+          # failures this week were structural rather than missing:
+          #
+          #   - fancy-flow-php v0.21.0 was tagged with no entry at all (caught
+          #     by the check above);
+          #   - fancy-flow's changelog had four sections inserted ABOVE the
+          #     [Unreleased] marker, so everything appended since -- including
+          #     0.49.0 -- landed below them, and reading top-down showed 0.48.1
+          #     as the newest release.
+          #
+          # The second would have PASSED the presence check. A consumer
+          # deciding whether to upgrade reads top-down; a changelog that is
+          # complete but mis-ordered tells a truthful-looking lie, and it is
+          # invisible to whoever wrote it because they were looking at their
+          # own entry rather than at the file.
+          #
+          # At release time the tagged version IS the newest, so it must be the
+          # first version heading in the file. [Unreleased] may precede it.
+          FIRST=$(grep -E '^## ' CHANGELOG.md                   | grep -viE '^## +\[?unreleased\]?'                   | head -1)
+
+          if ! printf '%s' "$FIRST" | grep -qE "^## +\[?v?${VERSION}\]?"; then
+            echo "::error::CHANGELOG.md has an entry for ${VERSION}, but it is NOT the first version heading."
+            echo "::error::Top of file is: ${FIRST}"
+            echo "::error::A consumer reads top-down, so a complete-but-mis-ordered changelog hides this release. Move it above the older entries."
+            exit 1
+          fi
+
+          echo "Found a changelog entry for ${VERSION}, and it is the newest."
