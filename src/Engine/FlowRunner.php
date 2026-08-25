@@ -14,6 +14,7 @@ use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\NodeStatus;
 use FancyFlow\Runtime\RunEvent;
 use FancyFlow\Runtime\RunOptions;
+use FancyFlow\Runtime\WorkflowProps;
 use FancyFlow\Runtime\RunResult;
 use FancyFlow\Schema\FlowEdge;
 use FancyFlow\Schema\FlowGraph;
@@ -82,6 +83,21 @@ final class FlowRunner
             return new RunResult(false, $outputs, $msg, $events);
         }
 
+        // Props are checked BEFORE anything runs, and a failure aborts.
+        //
+        // Before a node executes, not after: a workflow whose third node needs
+        // a value the caller misspelled would otherwise do two nodes' worth of
+        // real work -- sending, writing, charging -- and only then discover the
+        // call was malformed. Validation after a side effect is not validation.
+        $propsCheck = WorkflowProps::resolve($graph->inputs, $options->props);
+        if ($propsCheck['ok'] === false) {
+            $emit(RunEvent::runError($propsCheck['error']));
+
+            return new RunResult(false, $outputs, $propsCheck['error'], $events);
+        }
+        $props = $propsCheck['props'];
+        $declaresProps = $graph->inputs !== [];
+
         $incomingByNode = $this->indexIncoming($graph->edges);
         $start = hrtime(true);
 
@@ -145,7 +161,7 @@ final class FlowRunner
 
             $emit(RunEvent::nodeStatus($node->id, NodeStatus::RUNNING));
 
-            $inputs = $this->collectInputs($node, $incoming, $portValues, $initialInputs);
+            $inputs = $this->collectInputs($node, $incoming, $portValues, $initialInputs, $props, $declaresProps);
             $exec = $executors->resolveFor($node);
             if ($exec === null) {
                 $msg = "No executor registered for kind={$node->type}";
@@ -328,9 +344,25 @@ final class FlowRunner
      * @param array<string,array<string,mixed>> $initial
      * @return array<string,mixed>
      */
-    private function collectInputs(FlowNode $node, array $incoming, array $portValues, array $initial): array
+    private function collectInputs(FlowNode $node, array $incoming, array $portValues, array $initial, array $props = [], bool $declaresProps = false): array
     {
         $inputs = $initial[$node->id] ?? [];
+
+        // ENTRY POINTS are seeded with the props by their bare names, which is
+        // what lets an existing graph keep working unchanged: a trigger reading
+        // `{{ topic }}` was fed by `initialInputs[triggerId]['topic']`, and a
+        // caller moving to props passes `['topic' => ...]` to see exactly the
+        // same thing. Only entry points -- a node mid-graph reading a bare
+        // `topic` would be shadowing whatever its upstream edge is called.
+        //
+        // Never clobbers: a value the host already seeded is the host's.
+        if ($incoming === []) {
+            foreach ($props as $name => $value) {
+                if (! array_key_exists($name, $inputs)) {
+                    $inputs[$name] = $value;
+                }
+            }
+        }
         foreach ($incoming as $edge) {
             $key = $this->portKey($edge->source, $edge->sourceHandle);
             if (array_key_exists($key, $portValues)) {
@@ -347,6 +379,33 @@ final class FlowRunner
                     $inputs[$edge->source] = $portValues[$key];
                 }
             }
+        }
+
+        // EVERY node gets `$props`, entry point or not -- the half that makes
+        // props usable at depth. Seeding entry points alone would mean a node
+        // six hops downstream had the value threaded through every edge in
+        // between, and every hop is somewhere it can be dropped.
+        //
+        // It costs nothing to resolve: `$props` is an ORDINARY KEY in the
+        // inputs array and Expr already walks dot-paths against it, so
+        // `{{ $props.topic }}` works with no change to any resolver, in any of
+        // the three runtimes. Changing the resolver would have meant three
+        // divergent implementations of one rule.
+        //
+        // ONLY when the workflow DECLARES inputs, and that was a correction.
+        // An earlier draft wrote it unconditionally, justified as "so
+        // `{{ $props.x }}` resolves to null rather than throwing" -- which is
+        // not true: Expr yields null for any unresolvable path, so on a graph
+        // declaring nothing the key changes no behaviour. What it DOES do is
+        // add a key to every executor's inputs on every graph forever, and the
+        // golden parity fixtures caught it instantly -- twelve of them gained a
+        // `'$props' => []` line.
+        //
+        // Keyed on the DECLARATION, not on whether a value arrived: a workflow
+        // whose inputs are all optional and all omitted still declared a
+        // contract, so `$props` is present and empty.
+        if ($declaresProps) {
+            $inputs['$props'] = $props;
         }
 
         return $inputs;

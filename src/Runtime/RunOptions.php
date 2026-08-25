@@ -14,6 +14,11 @@ final class RunOptions
      * @param int|null                              $timeoutMs     Stop the run after this many ms. Null = no timeout.
      * @param AbortSignal|null                      $signal        Cooperative cancellation. Checked before each node.
      * @param array<string,array<string,mixed>>     $initialInputs Inputs seeded to entry nodes, keyed by node id then port.
+     * @param array<string,mixed>                   $props         Values for the inputs the GRAPH declares, passed by NAME.
+     *                                                             `initialInputs` is keyed by node id, so a caller had to know the
+     *                                                             trigger was called `t` and a rename broke every caller while the
+     *                                                             graph stayed valid. These are checked against the graph's own
+     *                                                             declaration, so a misspelling fails the run instead of sitting unread.
      * @param array<string,mixed>                   $resumeOutputs Outputs of nodes already completed in a prior run,
      *                                                             keyed by node id. Such a node is NOT re-executed — its
      *                                                             stored output is republished on its ports, reproducing
@@ -36,6 +41,7 @@ final class RunOptions
         public readonly ?int $timeoutMs = null,
         public readonly ?AbortSignal $signal = null,
         public readonly array $initialInputs = [],
+        public readonly array $props = [],
         public readonly array $resumeOutputs = [],
         public readonly int $depth = 0,
         RunIdentity|array|string|null $run = null,
