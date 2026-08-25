@@ -45,6 +45,40 @@ final class RunOptions
         public readonly array $resumeOutputs = [],
         public readonly int $depth = 0,
         RunIdentity|array|string|null $run = null,
+        /**
+         * Which ENTRY POINTS are live — the ids of nodes with NO incoming edges
+         * that this run should start from. `null` means unset and behaves
+         * exactly as before this option existed.
+         *
+         * A graph may hold more than one trigger — a `manual_trigger` for
+         * hand-testing beside the event trigger that runs it for real — and a
+         * trigger has no inbound edges, which IS the readiness rule. So without
+         * this, every trigger's branch runs on every run, whichever one fired.
+         * The triggers themselves are harmless; everything downstream of the
+         * ones that did not fire is not. A `user_input` stranded on the manual
+         * branch parks an event-driven run to ask a person for data the event
+         * already supplied, which from outside looks like the event trigger
+         * being ignored.
+         *
+         * Naming the live entry points makes the others INACTIVE, and the
+         * existing "at least one active inbound edge" rule then skips
+         * everything reachable only from them. No new routing logic.
+         *
+         * Three edges worth knowing, each pinned by `flow/entry-points` in
+         * `particle-academy/fancy-conformance`:
+         *  - `null` (unset) is NOT `[]`. Unset runs every entry point; an empty
+         *    list says none is live and runs nothing.
+         *  - A node reachable from SEVERAL entry points still runs when any one
+         *    of them fires — one active inbound edge is enough, as always.
+         *  - Naming a node that HAS inbound edges names no entry point, so every
+         *    real entry is inactive and nothing runs. That falls out of the rule
+         *    rather than being special-cased; validate your ids if you want a
+         *    typo to be loud, because the runtime cannot tell one from a
+         *    deliberate empty selection.
+         *
+         * @var list<string>|null
+         */
+        public readonly ?array $entryNodes = null,
     ) {
         $this->run = $run === null ? null : RunIdentity::from($run);
     }

@@ -140,6 +140,14 @@ final class FancyFlowManager
         FlowGraph|ImportResult|string|array $flow,
         array $initialInputs = [],
         ?int $workflowId = null,
+        /**
+         * Which entry points are live for THIS run. Null means unset and every
+         * entry point runs, exactly as before the option existed -- see
+         * {@see \FancyFlow\Runtime\RunOptions::$entryNodes}.
+         *
+         * @var list<string>|null
+         */
+        ?array $entryNodes = null,
     ): \FancyFlow\Laravel\Models\WorkflowRun {
         $run = new \FancyFlow\Laravel\Models\WorkflowRun();
         $run->forceFill([
@@ -148,6 +156,7 @@ final class FancyFlowManager
             'status' => \FancyFlow\Laravel\Models\WorkflowRun::PENDING,
             'schema' => $this->toSchemaArray($flow),
             'initial_inputs' => $initialInputs,
+            'entry_nodes' => $entryNodes,
         ])->save();
 
         \FancyFlow\Laravel\Jobs\RunWorkflowJob::enqueue($run);

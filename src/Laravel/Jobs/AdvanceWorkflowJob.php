@@ -137,7 +137,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
             return;
         }
 
-        $frontier = Frontier::compute($graph, NodeClaims::state($rows));
+        $frontier = Frontier::compute($graph, NodeClaims::state($rows), $run->entry_nodes);
 
         if ($frontier['skipped'] !== []) {
             foreach ($frontier['skipped'] as $nodeId) {
@@ -219,6 +219,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
             executors: RunSetup::executors($flow, $run),
             options: new RunOptions(
                 initialInputs: RunSetup::initialInputs($run),
+                entryNodes: $run->entry_nodes,
                 resumeOutputs: $checkpoint,
             ),
             runId: $run->run_key,

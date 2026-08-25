@@ -866,3 +866,62 @@ it('delivers NodeMessage on the DURABLE path, which is the one a Laravel app run
         fn (NodeMessage $e) => $e->nodeId === 't' && $e->phase === 'end' && $e->message === 'Team consulted',
     );
 });
+
+it('runs only the entry point that fired, on the per-node driver too', function () {
+    // The reported defect, on the driver the reporter actually runs. The
+    // FlowRunner gate alone is not enough here: the per-node driver decides
+    // readiness ITSELF in `Frontier::compute`, so without the same gate there it
+    // would dispatch a job for a trigger the engine then refuses to run, and the
+    // run would never settle.
+    //
+    // Graph: two triggers, a private branch each, converging on one output.
+    $run = FancyFlow::dispatch(
+        pnSchema(
+            [
+                pnNode('t1', 'manual_trigger'),
+                pnNode('t2', 'manual_trigger'),
+                pnNode('a', 'transform', ['expression' => '{{ $json.n }}']),
+                pnNode('b', 'transform', ['expression' => '{{ $json.n }}']),
+                pnNode('m', 'output'),
+            ],
+            [
+                pnEdge('e1', 't1', 'a'),
+                pnEdge('e2', 't2', 'b'),
+                pnEdge('e3', 'a', 'm'),
+                pnEdge('e4', 'b', 'm'),
+            ],
+        ),
+        ['t1' => ['n' => 1], 't2' => ['n' => 2]],
+        entryNodes: ['t1'],
+    );
+
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+
+    // `t2` was not named, so it is inactive; `b` is reachable only from `t2` and
+    // therefore never becomes ready. `m` still runs -- it has one active inbound
+    // edge, which has always been enough.
+    $ran = array_keys($run->outputs ?? []);
+    sort($ran);
+    expect($ran)->toBe(['a', 'm', 't1']);
+});
+
+it('still runs every entry point when entryNodes is unset', function () {
+    // The compatibility guard, and the reason `null` and `[]` are different
+    // things. Every durable run recorded before the column existed reads back
+    // null, and must behave exactly as it did.
+    $run = FancyFlow::dispatch(
+        pnSchema(
+            [pnNode('t1', 'manual_trigger'), pnNode('t2', 'manual_trigger'), pnNode('m', 'output')],
+            [pnEdge('e1', 't1', 'm'), pnEdge('e2', 't2', 'm')],
+        ),
+        ['t1' => ['n' => 1], 't2' => ['n' => 2]],
+    );
+
+    $run->refresh();
+
+    $ran = array_keys($run->outputs ?? []);
+    sort($ran);
+    expect($ran)->toBe(['m', 't1', 't2']);
+});

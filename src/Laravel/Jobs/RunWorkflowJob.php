@@ -169,6 +169,7 @@ final class RunWorkflowJob implements ShouldQueue
         $options = new RunOptions(
             timeoutMs: config('fancy-flow.timeout_ms'),
             initialInputs: RunSetup::initialInputs($run),
+                entryNodes: $run->entry_nodes,
             resumeOutputs: $run->node_outputs ?? [],
             // RUN-scoped, and honestly so. The single driver has no per-node
             // row, so every node in this attempt is told the run's attempt

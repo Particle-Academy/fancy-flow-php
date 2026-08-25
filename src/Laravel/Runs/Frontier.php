@@ -46,7 +46,7 @@ final class Frontier
      * @param  array<string,array{status:string,ports:list<string>}>  $state  from {@see NodeClaims::state()}
      * @return array{ready:list<string>,skipped:list<string>}
      */
-    public static function compute(FlowGraph $graph, array $state): array
+    public static function compute(FlowGraph $graph, array $state, ?array $entryNodes = null): array
     {
         /** @var array<string,list<FlowEdge>> $incoming */
         $incoming = [];
@@ -84,6 +84,31 @@ final class Frontier
                 }
 
                 $edges = $incoming[$id] ?? [];
+
+                // An ENTRY POINT this run did not start from is SETTLED AS
+                // SKIPPED — not merely passed over.
+                //
+                // The distinction is the whole bug I wrote and this test caught.
+                // A bare `continue` leaves the node neither ready nor settled, so
+                // `isComplete()` never returns true and the run stalls forever;
+                // the driver surfaces that as "Cycle detected in flow graph",
+                // which points at the graph rather than at the driver.
+                //
+                // Settling it with NO active ports is also what makes the rest
+                // work for free: its successors see every inbound edge dead and
+                // skip themselves by the existing rule, exactly as they do after
+                // a branch that never lit. No new routing logic.
+                //
+                // Gates only nodes with NO inbound edges: anything further down
+                // is not an entry point and its readiness is still its edges'.
+                if ($edges === [] && $entryNodes !== null && ! in_array($id, $entryNodes, true)) {
+                    $settled[$id] = [];
+                    $skipped[] = $id;
+                    $changed = true;
+
+                    continue;
+                }
+
                 $blocked = false;
                 $active = false;
 

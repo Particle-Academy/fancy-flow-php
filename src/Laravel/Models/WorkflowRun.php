@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * @property array<string,mixed>      $schema
  * @property array<string,mixed>|null $initial_inputs
+ * @property list<string>|null        $entry_nodes
  * @property array<string,mixed>|null $node_outputs
  * @property array<string,mixed>|null $outputs
  * @property array<string,bool>|null  $approvals
@@ -61,6 +62,7 @@ class WorkflowRun extends Model
     protected $casts = [
         'schema' => 'array',
         'initial_inputs' => 'array',
+        'entry_nodes' => 'array',
         'guard' => 'array',
         'cohort_seq' => 'integer',
         'node_outputs' => 'array',

@@ -130,6 +130,25 @@ final class FlowRunner
 
             $incoming = $incomingByNode[$node->id] ?? [];
 
+            // An ENTRY POINT that this run did not start from is inactive.
+            //
+            // A node with no inbound edges is unconditionally ready — that IS
+            // the readiness rule — so a graph with two triggers ran both
+            // branches on every run, whichever trigger actually fired. Naming
+            // the live entry points makes the rest inactive here, and the
+            // "at least one active inbound edge" test below then skips
+            // everything reachable only from them, with no new routing logic.
+            //
+            // Deliberately gates ONLY nodes with no incoming edges: a node
+            // further down the graph is not an entry point, and its readiness is
+            // still decided by its edges. Pinned by `flow/entry-points`.
+            if ($incoming === [] && $options->entryNodes !== null
+                && ! in_array($node->id, $options->entryNodes, true)) {
+                $emit(RunEvent::nodeStatus($node->id, NodeStatus::IDLE, 'skipped'));
+
+                continue;
+            }
+
             // Run once any upstream branch reaches this node. In topo order every
             // upstream node is already settled, so each incoming edge is active or
             // dead — never pending. Requiring ALL active wrongly skipped merge

@@ -8,6 +8,57 @@ upgrading.
 
 ---
 
+## 0.28.0 — 2026-08-25
+
+### Added
+
+- **`RunOptions::$entryNodes` — run only the trigger that actually fired**
+  (fancy-flow-php#10). Names the live entry points; everything reachable only
+  from the others is skipped.
+
+  A graph may hold more than one trigger — a `manual_trigger` for hand-testing
+  beside the event trigger that runs it for real — and a trigger has no inbound
+  edges, which **is** the readiness rule. So every trigger's branch ran on every
+  run, whichever one fired, under **both** queue drivers.
+
+  The triggers themselves were harmless; everything downstream of the ones that
+  did not fire was not. The reporter measured two failures: an empty payload
+  winning a race into a shared `transform`, and — with no workaround — a
+  `user_input` on the manual branch executing during an **event**-triggered run,
+  parking the run to ask a person for data the event had already supplied. From
+  outside, that reads as the event trigger being ignored. They were linting
+  against the graph shape to avoid it.
+
+  ```php
+  FancyFlow::dispatch($flow, ['evt' => $payload], entryNodes: ['evt']);
+  ```
+
+  **What to do: nothing.** Unset is the default and behaves exactly as before —
+  that compatibility guarantee is pinned as row `0101` of the shared table.
+
+  Both schedulers are gated from one source of truth, because the per-node
+  driver decides readiness itself in `Frontier::compute` and a gate in only the
+  engine would dispatch a job for a node the engine then refuses to run.
+
+  Two edges worth knowing, both pinned: **`null` is not `[]`** — unset runs every
+  entry point, an empty list says none is live and runs nothing; and naming a
+  node that HAS inbound edges names no entry point, so nothing runs. Validate
+  your ids if you want a typo to be loud, because the runtime cannot distinguish
+  one from a deliberate empty selection.
+
+  Pinned by `flow/entry-points` in `particle-academy/fancy-conformance` (7 rows),
+  written as a specification before any runtime implemented it. The TypeScript
+  and Python twins satisfy the identical rows.
+
+### Changed
+
+- New migration: `entry_nodes` on `fancy_flow_workflow_runs`, **nullable**. Null
+  means unset rather than none, so every run recorded before this column existed
+  keeps behaving exactly as it did. A default of `[]` would have said "no entry
+  point is live" and quietly stopped every historical run from resuming.
+
+  Run `php artisan migrate` after upgrading. Nothing else changes.
+
 ## 0.27.0 — 2026-08-25
 
 ### Added

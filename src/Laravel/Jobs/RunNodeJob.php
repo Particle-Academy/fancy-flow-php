@@ -153,7 +153,7 @@ final class RunNodeJob implements ShouldQueue
                 break;
             }
 
-            $next = $this->drainTarget($graph, $kinds);
+            $next = $this->drainTarget($graph, $kinds, $run->entry_nodes);
             if ($next === null || NodeClaims::claim($this->runKey, $next, $this->token) !== NodeClaims::WON) {
                 break;
             }
@@ -189,6 +189,7 @@ final class RunNodeJob implements ShouldQueue
                 // enforced by AdvanceWorkflowJob, which is the only place that
                 // knows how long the whole run has been going.
                 initialInputs: RunSetup::initialInputs($run),
+                entryNodes: $run->entry_nodes,
                 resumeOutputs: NodeClaims::outputs($rows),
                 // Per NODE, off the claim row — not per run. This is the only
                 // place in the suite where `attempt` and the first-attempt clock
@@ -279,9 +280,14 @@ final class RunNodeJob implements ShouldQueue
      *    attempt count — folding it into a neighbour's job to save a round trip
      *    is exactly the wrong trade.
      */
-    private function drainTarget(FlowGraph $graph, NodeKindRegistry $kinds): ?string
+    /** @param list<string>|null $entryNodes */
+    private function drainTarget(FlowGraph $graph, NodeKindRegistry $kinds, ?array $entryNodes = null): ?string
     {
-        $frontier = Frontier::compute($graph, NodeClaims::state(NodeClaims::all($this->runKey)));
+        // Threaded rather than omitted: this frontier decides what to drain
+        // inline, and a driver that forgot the live entry points here would pull
+        // a node from a branch that never fired into the SAME job -- the exact
+        // bug, surviving in the one path that skips the dispatcher.
+        $frontier = Frontier::compute($graph, NodeClaims::state(NodeClaims::all($this->runKey)), $entryNodes);
         if (count($frontier['ready']) !== 1) {
             return null;
         }
