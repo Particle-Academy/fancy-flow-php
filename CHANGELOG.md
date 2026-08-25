@@ -8,6 +8,77 @@ upgrading.
 
 ---
 
+## 0.26.0 — 2026-08-25
+
+### Fixed
+
+- **Binding one ordinary kind could silently install a GLOBAL FALLBACK for every
+  unmatched node.** `bind()` expands a kind into every id it answers to, and
+  already refused to expand the `*` sentinel *outwards* — but nothing stopped an
+  alias expanding *inwards* to it. A kind whose alias list contains `*` therefore
+  turned `bind('everything', …)` into `bind('*', …)`, and from then on every node
+  with no executor of its own ran that one.
+
+  Silent by construction: a fallback that exists and a fallback that does not
+  both let the run complete. The `*` slot may now only be written by an explicit
+  `bind('*')`.
+
+  Found by `flow/executor-resolution/0107` the first time this side ran the new
+  table — and the identical defect was in the Python twin, for the identical
+  reason. Both expand aliases at BIND time; TypeScript was unaffected only
+  because it expands at LOOKUP time and never looks the sentinel up as a kind.
+  **One fixture row, two runtimes, one shared blind spot** — which is the case
+  for the conformance package stated better than any argument for it.
+
+  **What to do: nothing**, unless you registered a kind literally named `*`.
+
+### Added
+
+- **`flow/executor-resolution` runs on this side** — the `node id → kind → *`
+  order, alias resolution in both directions, and failing closed when nothing
+  matches. Eight rows run here; the six `0200` rows are skipped with a stated
+  structural reason: this runtime's `FlowNode` is FLATTENED, so `$type` IS the
+  kind and there is no `data` slot for a `data.kind` to disagree from.
+
+  That asymmetry is the point rather than an omission. The TypeScript runtime
+  could run the wrong executor when `type` and `data.kind` named different
+  kinds; this one cannot, structurally. Inventing a `data.kind` field here so it
+  could answer rows about one would be writing code to satisfy a table.
+
+- `particle-academy/fancy-conformance` moved `^0.9.1` → `^0.12.0`.
+
+## 0.25.0 — 2026-08-25
+
+**Backfilled on 2026-08-25.** This entry was missing when the tag was pushed.
+The release gate caught it and failed within seconds — detection worked; acting
+on it did not. Recorded here rather than quietly added, because the gate's own
+rationale is that a consumer reads this file to decide whether to take a
+release, and an empty-looking one is read as an empty release.
+
+### Added
+
+- **Workflow props — the PHP twin, built against a published table.** A run can
+  be given values for the inputs a graph DECLARES, by name, instead of by node
+  id. `RunOptions::$props` carries them and `Runtime\WorkflowProps` resolves them
+  against `FlowGraph::$inputs`.
+
+  Keying by node id meant a caller had to know the trigger was called `t`, so
+  renaming a node broke every caller while the graph stayed perfectly valid. A
+  misspelled prop now FAILS the run before any node executes, rather than sitting
+  unread — validation that happens after a side effect is not validation.
+
+- `tests/Parity/WorkflowPropsConformanceTest.php` runs `flow/workflow-props` from
+  the shared corpus. The table existed before this port was written, so it is a
+  specification rather than a post-mortem — and it earned its keep at once,
+  failing exactly one row that turned out to describe an input PHP cannot
+  represent (`json_decode('{"0":"a"}', true)` coerces the numeric string key to
+  an int, so the map becomes a list). That row is skipped with the reason
+  attached; `0109` pins the same rule with a non-numeric key.
+
+### Changed
+
+- The release gate now checks changelog ORDER, not just presence.
+
 ## 0.24.0 — 2026-08-24
 
 ### Added

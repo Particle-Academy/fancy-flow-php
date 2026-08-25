@@ -113,7 +113,19 @@ final class ExecutorRegistry
 
         return array_values(array_filter(
             array_unique([...$declared, ...KindId::variants($kind)]),
-            static fn (string $id): bool => $id !== $kind,
+            // `*` is excluded in BOTH directions, and only one of them was
+            // covered. `bind()` already refuses to expand the sentinel OUT to
+            // namespaced spellings — but nothing stopped an alias expanding IN
+            // to it, so a kind that answers to `*` turned `bind('everything')`
+            // into a GLOBAL FALLBACK for every unmatched node in the graph.
+            // Silently: a fallback that exists and a fallback that does not both
+            // let the run complete.
+            //
+            // The `*` slot may only ever be written by an explicit `bind('*')`.
+            // Found by `flow/executor-resolution/0107`, which TypeScript already
+            // satisfied because it expands aliases at LOOKUP time and never
+            // looks the sentinel up as a kind.
+            static fn (string $id): bool => $id !== $kind && $id !== '*',
         ));
     }
 
