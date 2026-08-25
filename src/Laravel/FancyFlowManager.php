@@ -8,6 +8,7 @@ use Closure;
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Engine\FlowRunner;
 use FancyFlow\ExecutorRegistry;
+use FancyFlow\Laravel\Events\NodeMessage;
 use FancyFlow\Laravel\Events\NodeOutput;
 use FancyFlow\Laravel\Events\NodeStatusChanged;
 use FancyFlow\Laravel\Events\WorkflowFailed;
@@ -279,6 +280,14 @@ final class FancyFlowManager
                 ),
                 RunEvent::NODE_OUTPUT => $dispatch->dispatch(
                     new NodeOutput($runId, (string) $event->nodeId, (string) $event->portId, $event->value),
+                ),
+                // A node's own words to a person. This arm was missing, so
+                // `startingMsg` / `stoppingMsg` were emitted by the engine and
+                // discarded here — the feature worked from the in-process API
+                // and was unreachable from the durable path, which is the only
+                // one a Laravel app runs workflows on.
+                RunEvent::NODE_MESSAGE => $dispatch->dispatch(
+                    new NodeMessage($runId, (string) $event->nodeId, (string) $event->phase, (string) $event->message),
                 ),
                 default => null,
             };

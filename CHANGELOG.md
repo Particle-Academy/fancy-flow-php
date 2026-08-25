@@ -8,6 +8,36 @@ upgrading.
 
 ---
 
+## 0.27.0 — 2026-08-25
+
+### Added
+
+- **`Laravel\Events\NodeMessage` — a node's own words now reach Laravel**
+  (fancy-flow-php#9). `(runId, nodeId, phase, message)`, dispatched from the same
+  bridge as the other three, where `phase` is `'start'` or `'end'`.
+
+  `startingMsg` / `stoppingMsg` have been emitted by `FlowRunner::announce()`
+  since 0.25.0 as `RunEvent::nodeMessage()` — and `FancyFlowManager`'s bridge
+  matched three event types and sent everything else to `default => null`. So a
+  node's message to a person was computed, emitted, and **dropped one layer
+  before any consumer could read it.**
+
+  Worse than an absent feature: the docblock promises a channel deliberately
+  separate from `nodeStatus`'s diagnostic `$text`, and a host building against
+  that promise finds nothing arrives and gets no error explaining why. Reported
+  by a consumer who had both surfaces — a chat feed and a tray pill — built and
+  waiting for an event that could never arrive.
+
+  **Verified on the DURABLE path specifically**, not just in-process. That was
+  the reporter's actual path, and a fix confirmed only on the path nobody uses
+  would be this same defect wearing a green tick. It works because
+  `FancyFlowManager::run()` applies the bridge itself rather than leaving it to
+  callers, so `RunNodeJob` → `GraphReplay` is wrapped too — the bridge *chains*
+  a caller's `$onEvent` rather than replacing it.
+
+  **What to do: nothing.** Purely additive. Listen for the event if you want the
+  feed; ignore it and nothing changes.
+
 ## 0.26.0 — 2026-08-25
 
 ### Fixed

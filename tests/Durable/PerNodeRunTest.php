@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use FancyFlow\Contracts\NodeExecutor;
+use FancyFlow\Laravel\Events\NodeMessage;
 use FancyFlow\Laravel\Events\WorkflowSettled;
 use FancyFlow\Laravel\Facades\FancyFlow;
 use FancyFlow\Laravel\Jobs\AdvanceWorkflowJob;
@@ -827,3 +828,41 @@ final class PnCountingGuard implements \FancyFlow\Contracts\TriggerGuard
         return 'never skipped';
     }
 }
+
+it('delivers NodeMessage on the DURABLE path, which is the one a Laravel app runs', function () {
+    // The reported defect was that `startingMsg` / `stoppingMsg` never reach a
+    // Laravel consumer. Fixing the bridge's `default => null` arm makes them
+    // arrive on the in-process path -- but the report was specifically about the
+    // DURABLE path, where the caller is `RunNodeJob` and a host never gets to
+    // pass its own `$onEvent`.
+    //
+    // So this test exists rather than an inference. A fix verified only on the
+    // path nobody uses is the failure mode being fixed, wearing a green tick.
+    //
+    // It passes because `FancyFlowManager::run()` applies the bridge ITSELF
+    // rather than leaving it to callers -- every path is wrapped, including
+    // `GraphReplay`'s, whose own `$onEvent` the bridge chains rather than
+    // replaces.
+    Event::fake([NodeMessage::class]);
+
+    FancyFlow::dispatch(
+        pnSchema([[
+            'id' => 't',
+            'kind' => 'manual_trigger',
+            'position' => ['x' => 0, 'y' => 0],
+            'config' => [],
+            'startingMsg' => 'Consulting the team',
+            'stoppingMsg' => 'Team consulted',
+        ]]),
+        ['t' => ['n' => 1]],
+    );
+
+    Event::assertDispatched(
+        NodeMessage::class,
+        fn (NodeMessage $e) => $e->nodeId === 't' && $e->phase === 'start' && $e->message === 'Consulting the team',
+    );
+    Event::assertDispatched(
+        NodeMessage::class,
+        fn (NodeMessage $e) => $e->nodeId === 't' && $e->phase === 'end' && $e->message === 'Team consulted',
+    );
+});

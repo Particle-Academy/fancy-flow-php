@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use FancyFlow\Contracts\NodeExecutor;
+use FancyFlow\Laravel\Events\NodeMessage;
 use FancyFlow\Laravel\Events\NodeStatusChanged;
 use FancyFlow\Laravel\Events\WorkflowFinished;
 use FancyFlow\Laravel\Events\WorkflowStarted;
@@ -147,3 +148,50 @@ final class GreetExecutor implements NodeExecutor
         return $this->service->greet((string) ($input['name'] ?? $input));
     }
 }
+
+it('dispatches a NodeMessage event for startingMsg and stoppingMsg', function () {
+    // The feature existed in core and was UNREACHABLE from Laravel. `announce()`
+    // emits `RunEvent::nodeMessage()`, and the bridge matched three event types
+    // and sent everything else to `default => null` -- so a node's own words to
+    // a person were computed, emitted, and dropped one layer before anyone could
+    // read them.
+    //
+    // That is worse than the feature being absent: the docblock promises a feed
+    // deliberately separate from `nodeStatus`'s `$text`, and a host building
+    // against that promise finds nothing arrives, with no error to explain it.
+    Event::fake([NodeMessage::class]);
+
+    FancyFlow::run(
+        schema([[
+            'id' => 't',
+            'kind' => 'manual_trigger',
+            'startingMsg' => 'Consulting the team',
+            'stoppingMsg' => 'Team consulted',
+        ]]),
+        ['t' => ['x' => 1]],
+    );
+
+    Event::assertDispatched(
+        NodeMessage::class,
+        fn (NodeMessage $e) => $e->nodeId === 't' && $e->phase === 'start' && $e->message === 'Consulting the team',
+    );
+
+    // BOTH phases, because `stoppingMsg` is emitted only on SUCCESS and a test
+    // that checked only `start` would pass against a bridge that dropped `end`.
+    Event::assertDispatched(
+        NodeMessage::class,
+        fn (NodeMessage $e) => $e->nodeId === 't' && $e->phase === 'end' && $e->message === 'Team consulted',
+    );
+});
+
+it('dispatches no NodeMessage when a node declares neither message', function () {
+    // The negative half. Most nodes in a graph are plumbing, and a run that
+    // narrates all of them buries the two or three steps anyone follows -- which
+    // is the stated reason these fields are optional. Without this, the test
+    // above would pass against a bridge that announced every node.
+    Event::fake([NodeMessage::class]);
+
+    FancyFlow::run(schema([node('t', 'manual_trigger')]), ['t' => ['x' => 1]]);
+
+    Event::assertNotDispatched(NodeMessage::class);
+});
