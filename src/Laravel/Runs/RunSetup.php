@@ -30,6 +30,21 @@ final class RunSetup
      *
      * @return array<string,array<string,mixed>>
      */
+    /**
+     * The workflow-level props this run was started with.
+     *
+     * Sits beside {@see initialInputs()} rather than inside it because the two
+     * answer different questions: `initial_inputs` seeds ONE entry point by node
+     * id, while props are named values every node can read. Merging them would
+     * make a node id and a prop name collide in one namespace.
+     *
+     * @return array<string,mixed>
+     */
+    public static function props(WorkflowRun $run): array
+    {
+        return $run->props ?? [];
+    }
+
     public static function initialInputs(WorkflowRun $run): array
     {
         // Answers are still merged onto the node's `approved` / `values` ports,

@@ -220,6 +220,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
             options: new RunOptions(
                 initialInputs: RunSetup::initialInputs($run),
                 entryNodes: $run->entry_nodes,
+                props: RunSetup::props($run),
                 resumeOutputs: $checkpoint,
             ),
             runId: $run->run_key,

@@ -143,7 +143,25 @@ final class Workflow
             }
         }
 
-        return new ImportResult($ok, new FlowGraph($nodes, $edges), $issues);
+        // `graph.inputs` is what the workflow ACCEPTS -- the declaration
+        // `RunOptions::$props` is validated against. Dropping it here meant
+        // every imported graph declared nothing, so `WorkflowProps::resolve`
+        // rejected every prop with "this workflow declares no inputs" -- and a
+        // durable run ALWAYS imports from the stored schema, which made props
+        // unreachable for the only execution path a Laravel app uses.
+        //
+        // Only well-formed entries survive, and a malformed one is dropped
+        // rather than aborting the import: a bad declaration should not cost a
+        // consumer their whole graph, and `resolve()` is where a value is
+        // judged anyway.
+        $declaredInputs = [];
+        foreach (($schema['graph']['inputs'] ?? []) as $input) {
+            if (is_array($input) && is_string($input['name'] ?? null) && $input['name'] !== '') {
+                $declaredInputs[] = $input;
+            }
+        }
+
+        return new ImportResult($ok, new FlowGraph($nodes, $edges, $declaredInputs), $issues);
     }
 
     /**
@@ -168,6 +186,10 @@ final class Workflow
         }
 
         $schema['graph'] = [
+            // Written only when there IS a declaration, matching the TypeScript
+            // exporter. An always-present `"inputs": []` would change the bytes
+            // of every graph ever saved, for nothing.
+            ...($graph->inputs !== [] ? ['inputs' => $graph->inputs] : []),
             'nodes' => array_map(self::toSchemaNode(...), $graph->nodes),
             'edges' => array_map(self::toSchemaEdge(...), $graph->edges),
         ];

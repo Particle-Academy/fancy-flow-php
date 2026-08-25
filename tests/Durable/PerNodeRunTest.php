@@ -925,3 +925,64 @@ it('still runs every entry point when entryNodes is unset', function () {
     sort($ran);
     expect($ran)->toBe(['m', 't1', 't2']);
 });
+
+it('delivers workflow PROPS to a durable run, readable from any node', function () {
+    // The reported defect. The engine makes `$props` available to EVERY node --
+    // deliberately, so a value is not threaded edge by edge through nodes with
+    // no interest in it -- and nothing in src/Laravel ever populated
+    // `RunOptions::$props`. So the one mechanism designed for "a value any node
+    // may need" was unreachable from the only path a Laravel app runs on.
+    //
+    // The reporter's case: an org-file event whose content any node should be
+    // able to read as `{{ $props.content }}`, instead seeded into the trigger
+    // NODE and carried hop by hop -- where a `user_input` answer landing on the
+    // same port replaces it wholesale and the transcript is gone from there on.
+    $run = FancyFlow::dispatch(
+        [
+            '$schema' => Workflow::SCHEMA_URL,
+            'version' => 1,
+            'graph' => [
+                'inputs' => [['name' => 'content', 'type' => 'string', 'required' => true]],
+                'nodes' => [
+                    pnNode('t', 'manual_trigger'),
+                    // Reads the prop directly rather than from an inbound port,
+                    // which is the whole point: it is two hops from the trigger
+                    // and never had the value threaded to it.
+                    pnNode('mid', 'transform', ['expression' => '{{ $props.content }}']),
+                    pnNode('o', 'output'),
+                ],
+                'edges' => [pnEdge('e1', 't', 'mid'), pnEdge('e2', 'mid', 'o')],
+            ],
+        ],
+        [],
+        props: ['content' => 'the file text'],
+    );
+
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect($run->outputs['mid'] ?? null)->toBe('the file text');
+});
+
+it('fails a durable run whose props do not satisfy the declaration', function () {
+    // The validation still governs, and it still fails BEFORE any node runs --
+    // wiring the value through must not quietly become a way to skip the check.
+    // A misspelled key is the whole reason props exist rather than initialInputs.
+    $run = FancyFlow::dispatch(
+        [
+            '$schema' => Workflow::SCHEMA_URL,
+            'version' => 1,
+            'graph' => [
+                'inputs' => [['name' => 'content', 'type' => 'string', 'required' => true]],
+                'nodes' => [pnNode('t', 'manual_trigger')],
+                'edges' => [],
+            ],
+        ],
+        [],
+        props: ['contnet' => 'typo'],
+    );
+
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::FAILED);
+});

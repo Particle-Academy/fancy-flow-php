@@ -148,6 +148,15 @@ final class FancyFlowManager
          * @var list<string>|null
          */
         ?array $entryNodes = null,
+        /**
+         * Workflow-level props, keyed by NAME and checked against the graph's
+         * own `inputs` declaration. Unlike `$initialInputs` (keyed by node id,
+         * seeding one entry point) these reach EVERY node, so a value is not
+         * threaded edge by edge through nodes with no interest in it.
+         *
+         * @var array<string,mixed>
+         */
+        array $props = [],
     ): \FancyFlow\Laravel\Models\WorkflowRun {
         $run = new \FancyFlow\Laravel\Models\WorkflowRun();
         $run->forceFill([
@@ -157,6 +166,7 @@ final class FancyFlowManager
             'schema' => $this->toSchemaArray($flow),
             'initial_inputs' => $initialInputs,
             'entry_nodes' => $entryNodes,
+            'props' => $props,
         ])->save();
 
         \FancyFlow\Laravel\Jobs\RunWorkflowJob::enqueue($run);

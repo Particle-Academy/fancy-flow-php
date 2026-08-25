@@ -8,6 +8,50 @@ upgrading.
 
 ---
 
+## 0.29.0 — 2026-08-25
+
+### Fixed
+
+- **Workflow props were unreachable from Laravel — in THREE places, not one**
+  (fancy-flow-php#12). Props shipped in 0.25.0 and, on the path a Laravel app
+  actually runs, could never carry a value. Reported as a bridge gap; it turned
+  out the bridge was the last of three, and fixing only that one would have
+  changed nothing observable.
+
+  1. **`Workflow::import()` dropped `graph.inputs`.** That declaration is what
+     `WorkflowProps::resolve` validates against, so every imported graph declared
+     nothing and every prop was rejected with *"this workflow declares no
+     inputs"*. A durable run always imports from the stored schema, so props
+     could not work there by construction.
+  2. **`Workflow::export()` never wrote `graph.inputs` back.** A graph designed
+     in the TypeScript editor — which does emit them — passed through this
+     runtime and came out silently undeclared.
+  3. **Nothing in `src/Laravel` populated `RunOptions::$props`.** No column, no
+     `RunSetup` accessor, and none of the three jobs passed it.
+
+  The engine deliberately makes `$props` available to **every** node, so a value
+  is not threaded edge by edge through nodes with no interest in it. Without
+  this, the reporter's org-file payload could only be seeded into the trigger
+  NODE and carried hop by hop — where a `user_input` answer landing on the same
+  port replaces it wholesale and the content is gone from there on.
+
+  ```php
+  FancyFlow::dispatch($flow, props: ['content' => $file->text]);
+  // any node, at any depth: {{ $props.content }}
+  ```
+
+  Validation is unchanged and still fails **before any node runs** — wiring the
+  value through did not become a way to skip the check.
+
+  **What to do:** run `php artisan migrate` for the new nullable `props` column.
+  Behaviour for a run that passes none is identical to today.
+
+### Changed
+
+- `Workflow::export()` emits `graph.inputs` only when a graph declares some,
+  matching the TypeScript exporter. An always-present `"inputs": []` would change
+  the bytes of every graph ever saved, for nothing.
+
 ## 0.28.0 — 2026-08-25
 
 ### Added

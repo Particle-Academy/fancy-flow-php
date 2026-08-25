@@ -141,3 +141,53 @@ it('emits valid JSON via toJson', function () {
     expect(json_decode($json, true))->toBeArray();
     expect(json_decode($json, true)['version'])->toBe(1);
 });
+
+it('keeps a graph\'s DECLARED INPUTS through import', function () {
+    // `graph.inputs` is how a workflow says what it ACCEPTS -- the declaration
+    // `RunOptions::$props` is checked against. The importer dropped it, so every
+    // graph loaded here declared no inputs, and `WorkflowProps::resolve` then
+    // rejected every prop with "this workflow declares no inputs".
+    //
+    // That made props unusable for any durable run by construction, since a
+    // durable run always imports from the stored schema. The Laravel bridge not
+    // passing props was the reported half; this was underneath it, and fixing
+    // only the reported half would have changed nothing observable.
+    $result = Workflow::import([
+        '$schema' => Workflow::SCHEMA_URL,
+        'version' => 1,
+        'graph' => [
+            'inputs' => [['name' => 'content', 'type' => 'string', 'required' => true]],
+            'nodes' => [['id' => 't', 'kind' => 'manual_trigger', 'position' => ['x' => 0, 'y' => 0]]],
+            'edges' => [],
+        ],
+    ], lenient: true);
+
+    expect($result->graph->inputs)->toBe([
+        ['name' => 'content', 'type' => 'string', 'required' => true],
+    ]);
+});
+
+it('writes declared inputs back out on export', function () {
+    // The other half of the round trip. Import alone would still lose the
+    // declaration the moment a Laravel app re-exported a graph designed in the
+    // TypeScript editor -- which DOES emit `graph.inputs` -- so a graph could
+    // pass through this runtime and come out silently undeclared.
+    $graph = new FancyFlow\Schema\FlowGraph(
+        nodes: [],
+        edges: [],
+        inputs: [['name' => 'topic', 'type' => 'string']],
+    );
+
+    $schema = Workflow::export($graph);
+
+    expect($schema['graph']['inputs'])->toBe([['name' => 'topic', 'type' => 'string']]);
+});
+
+it('omits the inputs key entirely for a graph that declares none', function () {
+    // Matches the TypeScript exporter, which writes the key only when there is
+    // something to write. An always-present `"inputs": []` would change the
+    // bytes of every graph ever saved, for nothing.
+    $schema = Workflow::export(new FancyFlow\Schema\FlowGraph());
+
+    expect($schema['graph'])->not->toHaveKey('inputs');
+});

@@ -190,6 +190,7 @@ final class RunNodeJob implements ShouldQueue
                 // knows how long the whole run has been going.
                 initialInputs: RunSetup::initialInputs($run),
                 entryNodes: $run->entry_nodes,
+                props: RunSetup::props($run),
                 resumeOutputs: NodeClaims::outputs($rows),
                 // Per NODE, off the claim row — not per run. This is the only
                 // place in the suite where `attempt` and the first-attempt clock
