@@ -8,6 +8,67 @@ upgrading.
 
 ---
 
+## 0.44.0 — 2026-08-26
+
+### Added
+
+- **An edge that delivers NOTHING now says so.** The engine emits a `warn` log
+  event naming the edge, what it would have delivered, and what to do.
+
+  `collectInputs` binds a payload only when `"<sourceId>:<handle>"` exists, and
+  the miss was silent in both of its shapes: if the bad edge is a node's only
+  inbound one the node is skipped; if the node has another live edge it RUNS
+  with that port simply missing — and then the downstream template is
+  **completely correct and renders empty**, because the payload never arrived to
+  have a field in it. A consumer misdiagnosed two filed issues off the back of
+  the second shape, and an agent "fixed" one by correcting a field name that was
+  never wrong.
+
+  ```
+  Edge e2 reads port "text" from node n2, which never publishes it — nothing
+  would reach n3 at run time. Available: out. Note: "text" is a FIELD this node
+  emits, not a port — read it downstream as {{ in.text }} rather than naming it
+  as a source handle. Leave sourceHandle off to read the node's output.
+  ```
+
+  The near-miss clause is the part only the engine can supply, and it names the
+  actual confusion: an agent reaching for a field name where a port belongs. The
+  event carries `detail` (`edge`, `source`, `sourceHandle`) so a host can wire it
+  into its own diagnostics without parsing the sentence back apart.
+
+  **It does NOT warn on ordinary branching.** A `branch` that took `true`
+  publishes no `false`, and the edge leaving `false` binds nothing — that is
+  normal. The test is whether the handle is a port the node *could ever* publish,
+  not whether it did; asking "did it publish?" cannot tell the two apart, and
+  would warn on every branching graph. A warning that fires on ordinary
+  branching is noise, and noise is how a real warning stops being read.
+
+  Message shape agreed with the consumer who reported the defect.
+
+### Changed
+
+- **Upgrading from before 0.43.0? `for_each` is the one builtin to check.**
+
+  0.43.0's notes said "a node whose kind declares ports and does not declare its
+  own", which is correct and sends you to audit every kind. MOIC did the audit
+  and the answer is a single name, so here it is directly.
+
+  Of the builtins declaring named ports without an `out`, four — `branch`,
+  `switch_case`, `human_approval`, `llm_router` — return `Port::branch` /
+  `Port::only`, which `activatedPorts` handles *before* the declared-ports
+  fallback. Their routing never depended on the thing that was broken.
+
+  **`for_each` is the exception.** `ForEachExecutor` returns a plain
+  `['items' => …, 'count' => …]`, so it falls through to the declared ports:
+  before 0.43.0 it published `out`, and now it publishes `item` and `done` —
+  which is what its own docblock has always claimed it does, and what the Node
+  runtime has always done for the same JSON. **A handle-less edge leaving a
+  `for_each` therefore stops delivering.** Give it `item` or `done`.
+
+  If you have your own kind that declares named ports and returns a plain value,
+  the general rule still catches it — and as of this release the engine warns
+  about it at run time rather than leaving you to find it.
+
 ## 0.43.0 — 2026-08-26
 
 ### Fixed

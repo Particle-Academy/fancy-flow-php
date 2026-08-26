@@ -99,6 +99,12 @@ final class FlowRunner
         $declaresProps = $graph->inputs !== [];
 
         $incomingByNode = $this->indexIncoming($graph->edges);
+        // Built ONCE. Used only to explain an undelivered edge, but building it
+        // per node would make a diagnostic quietly O(n^2) on the hot path.
+        $nodesById = [];
+        foreach ($graph->nodes as $graphNode) {
+            $nodesById[$graphNode->id] = $graphNode;
+        }
         $start = hrtime(true);
 
         $emit(RunEvent::runStart());
@@ -147,6 +153,40 @@ final class FlowRunner
                 $emit(RunEvent::nodeStatus($node->id, NodeStatus::IDLE, 'skipped'));
 
                 continue;
+            }
+
+            // AN EDGE THAT DELIVERS NOTHING MUST SAY SO.
+            //
+            // Checked HERE, before the activity gate, because the two outcomes
+            // are both silent and only one reaches `collectInputs`. If the bad
+            // edge is a node's only inbound one the node is SKIPPED and never
+            // collects inputs at all; if the node has another live edge it RUNS
+            // with that port simply missing -- and then the downstream template
+            // is completely correct and renders empty, because the payload
+            // never arrived to have a field in it. A consumer misdiagnosed two
+            // filed issues off the back of the second shape.
+            //
+            // Keyed on the source having COMPLETED, which is what separates the
+            // two reasons a key can be absent. A branch that was not taken is
+            // ordinary and must never warn; a source that finished and does not
+            // publish this port is a misconfiguration that will never work on
+            // any run. A warning that fires on ordinary branching is noise, and
+            // noise is how a real warning stops being read.
+            foreach ($incoming as $edge) {
+                if (! array_key_exists($this->portKey($edge->source, $edge->sourceHandle), $portValues)
+                    && ($completed[$edge->source] ?? false)
+                    && ! in_array(
+                        $edge->sourceHandle ?? 'out',
+                        $this->possiblePortIds($nodesById[$edge->source] ?? null, $executors->kinds()),
+                        true,
+                    )) {
+                    $emit(RunEvent::log(
+                        'warn',
+                        $this->undeliveredEdgeMessage($edge, $node, $portValues, $executors->kinds(), $nodesById),
+                        $node->id,
+                        ['edge' => $edge->id, 'source' => $edge->source, 'sourceHandle' => $edge->sourceHandle ?? 'out'],
+                    ));
+                }
             }
 
             // Run once any upstream branch reaches this node. In topo order every
@@ -385,6 +425,7 @@ final class FlowRunner
         }
         foreach ($incoming as $edge) {
             $key = $this->portKey($edge->source, $edge->sourceHandle);
+
             if (array_key_exists($key, $portValues)) {
                 $inputs[$edge->targetHandle ?? 'in'] = $portValues[$key];
 
@@ -503,6 +544,131 @@ final class FlowRunner
         }
 
         return ['ports' => $ports, 'value' => $result];
+    }
+
+    /**
+     * The message for an edge whose source port publishes nothing.
+     *
+     * Shape agreed with the consumer who reported the defect, in their order,
+     * and each part earns its place:
+     *
+     *   1. THE EDGE ID FIRST. The author is looking at a graph, and the edge is
+     *      the thing they can act on. Naming only the nodes makes them hunt for
+     *      which of several edges is meant.
+     *   2. THE CONSEQUENCE, IN RUNTIME TERMS. Without "nothing will reach X"
+     *      this reads as a schema nit, and the author's instinct is that a
+     *      handle string is cosmetic. It is the difference between a lint and a
+     *      silently empty document.
+     *   3. THE AVAILABLE PORTS -- what makes it actionable rather than merely
+     *      correct. Taken from what the source ACTUALLY published on this run,
+     *      not from the kind's declaration, so a config-driven kind reports its
+     *      real ports.
+     *   4. THE REMEDY FOR THE COMMON CASE. Nearly every occurrence is an agent
+     *      ADDING a handle that should not be there, rather than choosing the
+     *      wrong one of several -- so "leave sourceHandle off" is the fix more
+     *      often than picking from the list.
+     *
+     * Plus the part only the engine can supply: when the named handle is a
+     * near-miss for a FIELD the source emits, say so. That is the actual
+     * confusion -- an agent reaching for a field name where a port belongs --
+     * and naming it turns a correction into an explanation.
+     */
+    private function undeliveredEdgeMessage(
+        FlowEdge $edge,
+        FlowNode $target,
+        array $portValues,
+        ?NodeKindRegistry $kinds,
+        array $graphNodes,
+    ): string {
+        $handle = $edge->sourceHandle ?? 'out';
+
+        $prefix = $edge->source.':';
+        $available = [];
+        foreach (array_keys($portValues) as $key) {
+            if (str_starts_with($key, $prefix)) {
+                $available[] = substr($key, strlen($prefix));
+            }
+        }
+
+        $message = sprintf(
+            'Edge %s reads port "%s" from node %s, which never publishes it — nothing would reach %s at run time.',
+            $edge->id,
+            $handle,
+            $edge->source,
+            $target->id,
+        );
+
+        if ($available !== []) {
+            $message .= ' Available: '.implode(', ', $available).'.';
+        }
+
+        // The near-miss: a FIELD of that name, where a PORT was expected.
+        $sourceNode = $graphNodes[$edge->source] ?? null;
+        $kindName = $sourceNode?->kind();
+        $kind = ($kindName !== null && $kinds !== null) ? $kinds->get($kindName) : null;
+        $fields = $kind?->outputShapeFor($sourceNode?->config ?? []) ?? null;
+
+        if (is_array($fields)) {
+            foreach ($fields as $field) {
+                $path = is_array($field) ? ($field['path'] ?? null) : null;
+                if ($path === $handle) {
+                    $message .= sprintf(
+                        ' Note: "%s" is a FIELD this node emits, not a port — read it downstream as {{ in.%s }} rather than naming it as a source handle.',
+                        $handle,
+                        $handle,
+                    );
+                    break;
+                }
+            }
+        }
+
+        if ($edge->sourceHandle !== null) {
+            $message .= " Leave sourceHandle off to read the node's output.";
+        }
+
+        return $message;
+    }
+
+    /**
+     * Every port this node COULD publish — not the ones it did.
+     *
+     * The distinction that keeps the undelivered-edge warning honest. A `branch`
+     * that took `true` publishes no `false`, and the edge leaving `false` binds
+     * nothing: that is ORDINARY BRANCHING and must never warn. A handle that is
+     * not a port of the node at all can never bind on any run, and that is a
+     * misconfiguration worth saying out loud.
+     *
+     * Asking "did it publish?" cannot tell those apart — both are absent — so it
+     * would warn on every branching graph. **A warning that fires on ordinary
+     * branching is noise, and noise is how a real warning stops being read.**
+     *
+     * Resolved the same way `activatedPorts` resolves them, deliberately: node
+     * `outputs` first, then the kind's, then `out`. Two copies of that
+     * precedence would agree until someone changed one.
+     *
+     * @return list<string>
+     */
+    private function possiblePortIds(?FlowNode $node, ?NodeKindRegistry $kinds): array
+    {
+        if ($node === null) {
+            return ['out'];
+        }
+
+        $declared = $node->outputs;
+
+        if ($declared === null) {
+            $kindName = $node->kind();
+            $kindPorts = ($kindName !== null && $kinds !== null) ? $kinds->get($kindName)?->outputs : null;
+            if ($kindPorts !== null && $kindPorts !== []) {
+                $declared = $kindPorts;
+            }
+        }
+
+        if ($declared === null) {
+            return ['out'];
+        }
+
+        return array_values(array_map(static fn (PortDescriptor $p) => $p->id, $declared));
     }
 
     private function portKey(string $nodeId, ?string $portId): string
