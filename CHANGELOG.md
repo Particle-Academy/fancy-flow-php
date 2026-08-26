@@ -8,6 +8,52 @@ upgrading.
 
 ---
 
+## 0.45.0 — 2026-08-26
+
+### Fixed
+
+- **0.43.0's host-kind fix did not work in a Laravel app — which is the only
+  place its reporter runs.** If you took 0.43.0 or 0.44.0 for that fix, take
+  this one.
+
+  0.43.0 taught `FlowRunner` to resolve a node's output ports through
+  `$executors->kinds()` rather than the static `NodeKindRegistry::default()`.
+  That was correct and it was tested. **But `FancyFlowServiceProvider` built the
+  container's `ExecutorRegistry` without passing the container's
+  `NodeKindRegistry`** — so `kinds()` fell straight back to the static builtin
+  catalogue, your kinds were invisible again, and a host kind with declared
+  ports published a single `out`.
+
+  Every consequence from 0.43.0's entry therefore still applied in a Laravel
+  app: an edge leaving one of your kind's real ports bound nothing, **with no
+  failure and no warning**, and the downstream template rendered empty while
+  being completely correct.
+
+  It also produced a false positive in 0.44.0's new undelivered-edge warning.
+  A known kind arriving as unknown falls back to `['out']`, so every named port
+  looked impossible and **ordinary branching through a host kind warned** —
+  a `pass`/`fail` node that took `fail` was reported as misconfigured.
+
+  **Why the existing test could not see it.** `HostKindPortsTest` constructs
+  `new ExecutorRegistry(kinds: $hostKinds)` itself, and that path was always
+  correct. Nobody constructs an `ExecutorRegistry` in an application; they
+  resolve one from the container. **A suite that builds its own objects cannot
+  catch a defect in how the framework builds them** — the same shape as the
+  `tool_calls` contract gap in 0.42.0, from the other direction. There is now a
+  Laravel-layer test that resolves everything from the container.
+
+  **Do you have to do anything?** No. If you register kinds into the container's
+  `NodeKindRegistry` — which is what the docs have always said — they now route.
+  If you worked around this by declaring `outputs` on every node in your
+  documents, you can stop; node-level `outputs` still win, so leaving them costs
+  nothing either.
+
+  `Builtin::executors()` takes an optional third argument, the kind registry, for
+  hosts that build their own.
+
+  Found by **flabs** on its first end-to-end run against a real Laravel app —
+  the failure the unit suite structurally could not reach.
+
 ## 0.44.0 — 2026-08-26
 
 ### Added

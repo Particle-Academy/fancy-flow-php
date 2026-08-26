@@ -70,7 +70,15 @@ final class Builtin
      * Pass {@see ExecutorDeps} to inject real HTTP / LLM / store / notifier
      * clients; omit it for the deterministic framework-free fakes.
      */
-    public static function executors(?ExecutorDeps $deps = null, ?\FancyFlow\Contracts\Resolver $resolver = null): ExecutorRegistry
+    /**
+     * @param ?\FancyFlow\NodeKindRegistry $kinds the catalogue the resulting
+     *        registry consults. Pass the HOST's when there is one: the engine
+     *        resolves a node's output ports through `ExecutorRegistry::kinds()`,
+     *        and omitting it falls back to the static builtin catalogue -- so a
+     *        host kind with declared ports publishes a single `out` and every
+     *        edge leaving one of its real ports delivers nothing, silently.
+     */
+    public static function executors(?ExecutorDeps $deps = null, ?\FancyFlow\Contracts\Resolver $resolver = null, ?\FancyFlow\NodeKindRegistry $kinds = null): ExecutorRegistry
     {
         $deps ??= new ExecutorDeps();
 
@@ -128,7 +136,7 @@ final class Builtin
             }
         }
 
-        return (new ExecutorRegistry($resolver))->bindMany($expanded);
+        return (new ExecutorRegistry($resolver, $kinds))->bindMany($expanded);
     }
 
     /**

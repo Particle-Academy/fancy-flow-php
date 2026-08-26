@@ -74,7 +74,28 @@ final class FancyFlowServiceProvider extends ServiceProvider
         $this->app->singleton(ExecutorRegistry::class, function (Container $app): ExecutorRegistry {
             $config = (array) $app['config']['fancy-flow'];
             $deps = $this->buildDeps($app, $config);
-            $registry = Builtin::executors($deps, new ContainerResolver($app));
+            // THE CONTAINER'S kind registry, passed in explicitly.
+            //
+            // Without it `$registry->kinds()` falls back to the STATIC
+            // `NodeKindRegistry::default()`, which holds the builtins and none
+            // of the host's own kinds. `FlowRunner` resolves a node's output
+            // ports through exactly that call, so a host kind declaring real
+            // ports published a single `out` -- and every edge leaving one of
+            // its named ports delivered NOTHING, with no failure and no warning.
+            //
+            // 0.43.0 fixed the engine half and this was missed, so the fix
+            // worked everywhere EXCEPT a Laravel app, which is the only place
+            // its reporter runs. The unit test could not see it: it builds its
+            // own `ExecutorRegistry`, and nobody does that in an application.
+            //
+            // Passed by REFERENCE, not copied: a host registers its kinds in its
+            // own provider's boot(), which runs after this closure would have
+            // taken a snapshot.
+            $registry = Builtin::executors(
+                $deps,
+                new ContainerResolver($app),
+                $app->make(NodeKindRegistry::class),
+            );
             if ((bool) ($config['agentic'] ?? true)) {
                 $registry->bind('agent', new AgentExecutor($deps->llm, $deps->tools));
             }

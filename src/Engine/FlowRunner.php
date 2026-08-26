@@ -658,6 +658,19 @@ final class FlowRunner
 
         if ($declared === null) {
             $kindName = $node->kind();
+
+            // An UNREGISTERED kind is not ambiguous, which is worth stating
+            // because it looks as though it should be. `activatedPorts` falls
+            // back to exactly `['out']` for a kind it cannot resolve -- so an
+            // unknown kind deterministically publishes `out` and nothing else,
+            // and naming any other handle on it really is impossible.
+            //
+            // An earlier attempt at this treated "kind not found" as "ports
+            // unknown" and went silent. That was a mis-diagnosis of a false
+            // positive whose real cause was one layer up: the Laravel provider
+            // was not giving `ExecutorRegistry` the host's registry, so KNOWN
+            // kinds were arriving here as unknown. Fixing the lookup fixed the
+            // warning; weakening the warning only hid it.
             $kindPorts = ($kindName !== null && $kinds !== null) ? $kinds->get($kindName)?->outputs : null;
             if ($kindPorts !== null && $kindPorts !== []) {
                 $declared = $kindPorts;
