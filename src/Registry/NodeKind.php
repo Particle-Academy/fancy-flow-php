@@ -57,7 +57,78 @@ final class NodeKind
          * node to a single attempt; nothing else in the engine consults it.
          */
         public readonly ?string $sideEffects = null,
+        /**
+         * The FIELDS this kind emits — not its ports. `{{ in.text }}` is a
+         * field; `outputs` is where an edge attaches. They are different
+         * questions and only this one can answer "does that field exist".
+         *
+         * Three states, and the third is the reason this is nullable:
+         *   - `null`      — NOT DECLARED. Nobody has said. Unknown.
+         *   - `[]`        — declares that it emits no fields.
+         *   - a list      — `[['path' => 'text', 'type' => 'string'], ...]`
+         *
+         * Collapsing `null` into `[]` is the bug this field was added to fix.
+         * A consumer reading "no shape" as "emits nothing" refuses a legitimate
+         * `{{ in.title }}`, and a false rejection is one the author cannot
+         * comply with.
+         *
+         * **A Closure is a first-class form, not an escape hatch.** A
+         * `user_input` emits the keys its author defined and a `system_event`
+         * its event's payload; no static list can know either. The closure
+         * receives the node's own config and returns the field list. Use
+         * {@see outputShapeFor()} rather than reading this property, so both
+         * forms resolve the same way.
+         *
+         * @var list<array{path:string,type?:string,description?:string}>|\Closure|null
+         */
+        public readonly array|\Closure|null $outputShape = null,
     ) {}
+
+    /**
+     * The fields this kind emits for a given config, or `null` when nothing has
+     * been declared.
+     *
+     * Always prefer this to reading `$outputShape`: it resolves the static and
+     * closure forms identically, so a caller cannot accidentally handle only
+     * the one it happened to meet first.
+     *
+     * @param  array<string,mixed> $config
+     * @return list<array{path:string,type?:string,description?:string}>|null
+     */
+    public function outputShapeFor(array $config): ?array
+    {
+        if ($this->outputShape === null) {
+            return null;
+        }
+        if ($this->outputShape instanceof \Closure) {
+            return ($this->outputShape)($config);
+        }
+
+        return $this->outputShape;
+    }
+
+    /**
+     * True when the shape depends on config and therefore cannot be serialised.
+     *
+     * A manifest reader needs this to tell "config-dependent, resolve it
+     * in-process" from "nothing declared" — which is the same absent-vs-empty
+     * distinction one level down, at the serialisation seam.
+     */
+    public function hasDynamicOutputShape(): bool
+    {
+        return $this->outputShape instanceof \Closure || $this->outputShape === self::DYNAMIC_OUTPUT_SHAPE;
+    }
+
+    /**
+     * What `toArray()` writes for a closure-backed shape.
+     *
+     * A closure cannot cross a JSON boundary. Dropping it would make the
+     * manifest say "no outputShape", which reads as "emits nothing" — exactly
+     * the failure this field exists to prevent, reintroduced at the point the
+     * kind is written down. So the manifest says DYNAMIC instead: a reader
+     * learns a shape exists and that it must ask the runtime for it.
+     */
+    public const DYNAMIC_OUTPUT_SHAPE = 'dynamic';
 
     /**
      * Every id this kind answers to — canonical first.
@@ -102,6 +173,14 @@ final class NodeKind
             )),
             pausesForHuman: isset($raw['pausesForHuman']) ? (string) $raw['pausesForHuman'] : null,
             sideEffects: isset($raw['sideEffects']) ? (string) $raw['sideEffects'] : null,
+            // A manifest that says DYNAMIC comes back as a closure yielding
+            // null: "a shape exists, and this process cannot resolve it".
+            // Storing the marker string instead would push the decision onto
+            // every caller, and the caller that forgets reads it as a field
+            // list -- the failure this whole field exists to prevent.
+            outputShape: ($raw['outputShape'] ?? null) === self::DYNAMIC_OUTPUT_SHAPE
+                ? static fn (array $config): ?array => null
+                : $raw['outputShape'] ?? null,
         );
     }
 
@@ -151,6 +230,14 @@ final class NodeKind
         }
         if ($this->pausesForHuman !== null) {
             $out['pausesForHuman'] = $this->pausesForHuman;
+        }
+        if ($this->outputShape !== null) {
+            // A closure is written down as DYNAMIC rather than omitted: absent
+            // would read as "emits nothing", which is a legitimate answer and
+            // therefore an invisible loss.
+            $out['outputShape'] = $this->outputShape instanceof \Closure
+                ? self::DYNAMIC_OUTPUT_SHAPE
+                : $this->outputShape;
         }
         if ($this->sideEffects !== null) {
             $out['sideEffects'] = $this->sideEffects;

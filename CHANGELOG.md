@@ -8,6 +8,48 @@ upgrading.
 
 ---
 
+## 0.33.0 — 2026-08-26
+
+### Added
+
+- **`outputShape` — the FIELDS a kind emits, not its ports.** It existed in the
+  TypeScript twin and in neither backend, so a host running on PHP had
+  nothing to check `{{ in.field }}` against.
+
+  The consequence was not theoretical. A design partner hand-maintained a table
+  of emissions derived by reading our executors' source, because the runtime
+  their graphs execute in had nowhere to declare it. That table drifted: it
+  **refused a legitimate `{{ in.title }}` while accepting a field that does not
+  exist** — a false rejection an author cannot comply with.
+
+  Three states, and the third is the point:
+
+  | | means |
+  |---|---|
+  | `null` | NOT DECLARED — nobody has said |
+  | `[]` | declares that it emits no fields |
+  | a list | `[{ path: "text", type: "string" }, …]` |
+
+  Collapsing "not declared" into "declares nothing" is the bug. It is the same
+  shape as `graph.inputs` dropped on import and `sideEffects` declared by
+  nothing: **a capability present in one runtime and absent in the others, where
+  absent reads as a legitimate answer.**
+
+  **A Closure of config is a first-class form**, not an escape hatch: a
+  `user_input` emits the keys its author defined and a `system_event` its
+  event's payload, and no static list knows either. Read it through
+  `outputShapeFor($config)` rather than the property directly, so both forms resolve
+  identically and a caller cannot handle only the one it met first.
+
+  Serialising a dynamic shape writes `"dynamic"` rather than omitting it —
+  omission would say "no outputShape", which reads as "emits nothing" and would
+  reintroduce the exact failure at the serialisation seam. It comes back as a
+  Closure yielding null: *a shape exists, and this process cannot resolve it.*
+
+  **What a consumer must DO:** nothing. Purely additive — every existing kind
+  reads `null`, which is the honest answer for a kind that has never declared
+  one. Populating the builtins follows.
+
 ## 0.32.0 — 2026-08-25
 
 ### Fixed
