@@ -123,7 +123,7 @@ final class FlowRunner
             // stored output is republished on its ports (reproducing the same
             // routing) so downstream nodes see identical inputs.
             if (array_key_exists($node->id, $resumeOutputs)) {
-                $this->publish($node, $resumeOutputs[$node->id], $outputs, $portValues, $completed, $emit, resumed: true);
+                $this->publish($node, $resumeOutputs[$node->id], $outputs, $portValues, $completed, $emit, resumed: true, kinds: $executors->kinds());
 
                 continue;
             }
@@ -195,7 +195,7 @@ final class FlowRunner
                 self::announce($emit, $node, 'start');
                 $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run, $executors);
                 $result = $exec($ctx);
-                $this->publish($node, $result, $outputs, $portValues, $completed, $emit);
+                $this->publish($node, $result, $outputs, $portValues, $completed, $emit, kinds: $executors->kinds());
                 // Success path only, and deliberately so: a `stoppingMsg` of
                 // "Analysis complete" emitted after a throw tells a human the
                 // opposite of what happened, in the part of the UI they trust
@@ -254,10 +254,11 @@ final class FlowRunner
         array &$completed,
         callable $emit,
         bool $resumed = false,
+        ?NodeKindRegistry $kinds = null,
     ): void {
         $outputs[$node->id] = $result;
 
-        $activated = $this->activatedPorts($node, $result);
+        $activated = $this->activatedPorts($node, $result, $kinds);
         foreach ($activated['ports'] as $portId) {
             $portValues[$this->portKey($node->id, $portId)] = $activated['value'];
             $emit(RunEvent::nodeOutput($node->id, $portId, $activated['value']));
@@ -436,7 +437,7 @@ final class FlowRunner
      *
      * @return array{ports:list<string>,value:mixed}
      */
-    private function activatedPorts(FlowNode $node, mixed $result): array
+    private function activatedPorts(FlowNode $node, mixed $result, ?NodeKindRegistry $kinds = null): array
     {
         if (is_array($result)) {
             if (isset($result['__port']) && is_string($result['__port'])) {
@@ -485,7 +486,7 @@ final class FlowRunner
         $declared = $node->outputs;
         $kindName = $node->kind();
         if ($declared === null && $kindName !== null) {
-            $kindPorts = NodeKindRegistry::default()->get($kindName)?->outputs;
+            $kindPorts = ($kinds ?? NodeKindRegistry::default())->get($kindName)?->outputs;
             // Only adopt NON-EMPTY kind ports. A terminal kind (category
             // "output") declares an empty list, and consuming that literally
             // would publish zero ports where the historical fallback published

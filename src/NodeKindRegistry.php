@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FancyFlow;
 
+use FancyFlow\Registry\Builtin;
 use FancyFlow\Registry\ConfigField;
 use FancyFlow\Registry\NodeKind;
 
@@ -29,7 +30,18 @@ final class NodeKindRegistry
     /** The shared registry — the analogue of the TS module-global. */
     public static function default(): self
     {
-        return self::$default ??= new self();
+        if (self::$default === null) {
+            // Assigned BEFORE populating, not after. `Builtin::register()`
+            // constructs kinds, and anything that reads the default registry
+            // during that call must find this instance rather than re-enter
+            // and build a second one. The TypeScript twin's
+            // `ensureBuiltinKinds()` sets its flag in the same order and for
+            // the same reason.
+            self::$default = new self();
+            Builtin::register(self::$default, withStructural: true);
+        }
+
+        return self::$default;
     }
 
     /** Reset the shared registry. Handy for test isolation. */

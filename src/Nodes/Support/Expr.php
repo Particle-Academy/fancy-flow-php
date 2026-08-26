@@ -21,8 +21,19 @@ namespace FancyFlow\Nodes\Support;
  */
 final class Expr
 {
-    public static function evaluate(mixed $template, array $context): mixed
-    {
+    /**
+     * Evaluate a template against a context.
+     *
+     * `$onUnresolved` decides what happens to a path that does not resolve.
+     * It defaults to {@see UnresolvedPolicy::Empty} — today's behaviour,
+     * unchanged — because this is opt-in before it is default, at the request
+     * of the consumer who reported the problem.
+     */
+    public static function evaluate(
+        mixed $template,
+        array $context,
+        UnresolvedPolicy $onUnresolved = UnresolvedPolicy::Empty,
+    ): mixed {
         if (! is_string($template)) {
             return $template;
         }
@@ -31,23 +42,56 @@ final class Expr
 
         // Whole-string single expression → return the raw resolved value.
         if (preg_match('/^\{\{\s*(.*?)\s*\}\}$/s', $trimmed, $m) === 1) {
-            return self::resolvePath($m[1], $context);
+            $r = self::tryResolvePath($m[1], $context);
+            if ($r->resolved) {
+                return $r->value;
+            }
+
+            // This branch returns `null` under Empty, not `''` -- that is what
+            // it has always done, and the asymmetry is deliberate: this branch
+            // preserves TYPE, so its absent value is the typed one.
+            return match ($onUnresolved) {
+                UnresolvedPolicy::Throw => throw new UnresolvedPathException($m[1]),
+                UnresolvedPolicy::Keep => $template,
+                UnresolvedPolicy::Empty => null,
+            };
         }
 
         // Otherwise interpolate each {{ … }} as a string.
         return preg_replace_callback(
             '/\{\{\s*(.*?)\s*\}\}/s',
-            static fn (array $m): string => self::stringify(self::resolvePath($m[1], $context)),
+            static function (array $m) use ($context, $onUnresolved): string {
+                $r = self::tryResolvePath($m[1], $context);
+                if ($r->resolved) {
+                    return self::stringify($r->value);
+                }
+
+                return match ($onUnresolved) {
+                    UnresolvedPolicy::Throw => throw new UnresolvedPathException($m[1]),
+                    // `$m[0]` is the WHOLE match, so the original spacing comes
+                    // back byte-identical. A "kept" template that returned
+                    // subtly reformatted would be its own small lie.
+                    UnresolvedPolicy::Keep => $m[0],
+                    UnresolvedPolicy::Empty => '',
+                };
+            },
             $template,
         );
     }
 
-    /** Resolve a dot-path against the context, honoring the `$json` / `$input` alias. */
-    public static function resolvePath(string $path, array $context): mixed
+    /**
+     * Resolve a dot-path, reporting WHETHER it resolved.
+     *
+     * The same walk as {@see self::resolvePath()} — deliberately, since that
+     * method is now defined in terms of this one. Two copies of a traversal
+     * agree right up until someone edits one of them, and nothing anywhere
+     * reports that.
+     */
+    public static function tryResolvePath(string $path, array $context): Resolution
     {
         $path = trim($path);
         if ($path === '') {
-            return null;
+            return Resolution::missing();
         }
 
         $segments = explode('.', $path);
@@ -65,12 +109,36 @@ final class Expr
                 $cursor = $cursor[$segment];
             } elseif (is_object($cursor) && isset($cursor->{$segment})) {
                 $cursor = $cursor->{$segment};
+            } elseif (is_object($cursor) && property_exists($cursor, $segment)) {
+                // A DECLARED property holding null. `isset()` is false for it --
+                // `isset()` is the same absent-vs-null collapse this method
+                // exists to remove, so relying on it alone would reproduce the
+                // bug inside the fix.
+                //
+                // Checked AFTER isset() rather than instead of it, because
+                // `property_exists()` does not consult `__isset`/`__get`: an
+                // Eloquent model's attributes are magic, so `property_exists`
+                // is false for every one of them while `isset` is true. Testing
+                // isset first keeps magic objects working exactly as before and
+                // only adds the null-valued declared-property case.
+                $cursor = $cursor->{$segment};
             } else {
-                return null;
+                return Resolution::missing();
             }
         }
 
-        return $cursor;
+        return Resolution::found($cursor);
+    }
+
+    /**
+     * Resolve a dot-path against the context, honoring the `$json` / `$input` alias.
+     *
+     * Returns `null` both for "did not resolve" and for "resolved to null" —
+     * use {@see self::tryResolvePath()} when you need to tell those apart.
+     */
+    public static function resolvePath(string $path, array $context): mixed
+    {
+        return self::tryResolvePath($path, $context)->value;
     }
 
     /**

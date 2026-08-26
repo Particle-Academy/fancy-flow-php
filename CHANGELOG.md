@@ -8,6 +8,105 @@ upgrading.
 
 ---
 
+## 0.43.0 — 2026-08-26
+
+### Fixed
+
+- **A HOST-registered kind's output ports were invisible to the engine, so
+  edges leaving them delivered NOTHING.** `FlowRunner::activatedPorts` resolved
+  kind ports through `NodeKindRegistry::default()` — the shared static
+  catalogue — instead of the registry the host supplied to its
+  `ExecutorRegistry`. A kind your application registered fell through to
+  publishing a single `out`.
+
+  That is worse than "some ports are missing". `collectInputs` binds a payload
+  only when `"<sourceId>:<handle>"` exists, so an edge leaving your kind's real
+  port found nothing and delivered nothing — **no failure, no warning**. The
+  downstream template is then completely correct and renders empty, because the
+  payload never arrived to have a field in it. The consumer who reported it
+  misdiagnosed two filed issues off the back of exactly that, and an agent
+  "fixed" one by correcting a field name that was never wrong.
+
+  It also broke this package's central guarantee: the TS side resolves ports
+  through the registry a host registers into, so the **same graph JSON routed
+  correctly on Node and collapsed to `out` on PHP** — for precisely the hosts
+  that extend the kit.
+
+  **Do you have to do anything?** If you pass your own `NodeKindRegistry` to
+  `ExecutorRegistry` (`new ExecutorRegistry(kinds: $yours)`), nothing — it now
+  works as it always read. If you were working around this by declaring
+  `outputs` on every node in the document, you can stop; node-level `outputs`
+  still take precedence, so leaving them costs nothing either.
+
+  `ExecutorRegistry::kinds()` is new and public, for hosts that need the
+  effective catalogue.
+
+  Reported by MOIC.
+
+- **`NodeKindRegistry::default()` was an EMPTY singleton nothing ever
+  populated**, which is why the fallback above had never resolved a kind in the
+  first place.
+
+  It was `self::$default ??= new self()`; `Builtin::register()` is called on
+  fresh registries in three other places and never on this one. So the kind-ports
+  fallback — added, in its own comment, so that a branch node would not "collapse
+  to a single `out` here while routing correctly on Node" — **could never fire.**
+  The guarantee was broken by the very lookup written to uphold it.
+
+  Wired to nothing: present, reviewed, commented, and with no effect. The
+  TypeScript twin had the identical defect and was fixed the same day with
+  `ensureBuiltinKinds()`; nobody checked the PHP side until MOIC's report led
+  here.
+
+  **Do you have to do anything?** Almost certainly not, and it is worth being
+  precise about the one case. A node whose kind declares ports, that does NOT
+  declare `outputs` itself, previously published `out` and now publishes its
+  kind's ports — which is what the Node runtime has always done for the same
+  JSON. If you have an edge with no `sourceHandle` leaving such a node, it reads
+  `out` and would now find nothing; give it the real handle. All 484 tests here,
+  including every golden parity fixture, pass unchanged.
+
+### Added
+
+- **`Expr::tryResolvePath()` — telling "did not resolve" apart from "resolved to
+  empty".**
+
+  `resolvePath()` returns `null` both for a path that does not exist and for one
+  that exists holding `null`, and at the interpolation layer that collapses
+  further to `''`. In the reporting consumer's words: *"An unresolvable path
+  yields `''`, so a wrong field is indistinguishable from an empty one at
+  runtime."* A misspelled field renders as an empty string, which looks exactly
+  like a field that is legitimately empty — worst on LLM-authored graphs, where
+  the field name was guessed to begin with.
+
+  Same shape as the four `??` collapses fixed across all four runtimes earlier
+  today, one layer up. A second return channel rather than a cleverer sentinel,
+  because **every sentinel is a legal value for somebody**: `''`, `null` and
+  `false` are all things a real payload carries.
+
+- **`Expr::evaluate(..., UnresolvedPolicy $onUnresolved)`** — `Empty` (today's
+  behaviour, the DEFAULT), `Keep` (leave the `{{ … }}` text so the failure is
+  visible in the output without stopping the run), `Throw` (refuse, with the
+  path on the exception).
+
+  **Do you have to do anything? No.** The default is unchanged and every
+  existing call site keeps its behaviour. Opt-in before default was the
+  reporting consumer's own condition. Implemented identically in all of
+  `fancy-flow`, `fancy-flow-py` and here.
+
+### Fixed
+
+- **`Expr`'s object branch treated a declared property holding `null` as
+  absent.** It tested `isset()`, which is false for `?string $x = null` —
+  `isset()` IS the absent-vs-null collapse this release exists to remove, so
+  relying on it would have reproduced the bug inside the fix.
+
+  Now `isset()` first, falling back to `property_exists()`. That order matters:
+  `property_exists()` does not consult `__isset`/`__get`, and an Eloquent model's
+  attributes are all magic — testing it first would have broken every host that
+  puts a model in the context. No `resolvePath()` answer changes; only
+  `tryResolvePath()` can observe the difference.
+
 ## 0.42.0 — 2026-08-26
 
 ### Fixed

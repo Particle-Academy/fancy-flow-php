@@ -45,6 +45,30 @@ final class ExecutorRegistry
     }
 
     /**
+     * The catalogue this registry consults — the host's when it supplied one.
+     *
+     * Exposed because the ENGINE needs it. `FlowRunner::activatedPorts` resolves
+     * a node's output ports through its kind, and it was reaching for
+     * `NodeKindRegistry::default()` — the static builtin catalogue — so a kind
+     * the host registered was invisible at exactly the moment its ports
+     * mattered, and the node fell through to publishing a single `out`.
+     *
+     * The consequence is not "some ports are missing". `collectInputs` binds a
+     * payload only when `"<sourceId>:<handle>"` exists, so an edge leaving a
+     * host kind's real port found nothing and delivered NOTHING — no failure,
+     * no warning, and a downstream template that is completely correct
+     * rendering empty because the payload never arrived to have a field in it.
+     *
+     * Reported by a consumer who misdiagnosed two filed issues off the back of
+     * it. It also broke the same-JSON-same-outputs guarantee outright, since
+     * the TS side resolves ports through the registry a host registers into.
+     */
+    public function kinds(): NodeKindRegistry
+    {
+        return $this->kinds ?? NodeKindRegistry::default();
+    }
+
+    /**
      * Bind an executor to a node kind (e.g. `api_request`) or the `*` fallback.
      *
      * **Alias-aware for kinds this registry knows.** Binding `user_input` binds
