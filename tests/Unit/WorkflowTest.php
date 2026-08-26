@@ -191,3 +191,73 @@ it('omits the inputs key entirely for a graph that declares none', function () {
 
     expect($schema['graph'])->not->toHaveKey('inputs');
 });
+
+/*
+ * SCHEMA MIGRATION — the seam, and the three properties that make it real.
+ *
+ * The version has always been on the document; only TypeScript acted on it.
+ * PHP and Python compared it and errored, so the day schema v2 is cut every
+ * stored Op hard-fails to import on both SERVER runtimes — which is where
+ * durable runs resume. A parked run would become unresumable, and the fix
+ * cannot be applied afterwards: the graphs are already unreadable by the code
+ * that would migrate them.
+ *
+ * `migrate()` takes its step table as an argument precisely so these can be
+ * tested. With only v1 in existence there is no old document to migrate, so a
+ * seam tested against the built-in (empty) table is a check that CANNOT fail —
+ * it would pass identically against a `migrate()` that returned its input and
+ * did nothing, which is what this repo has now.
+ */
+
+it('migrates a PAST version forward through the step table', function () {
+    $steps = [
+        // A step keyed N takes a version-N document to version N+1.
+        0 => function (array $s): array {
+            $s['graph']['nodes'][0]['kind'] = 'manual_trigger';
+
+            return $s;
+        },
+    ];
+
+    $migrated = Workflow::migrate([
+        '$schema' => Workflow::SCHEMA_URL,
+        'version' => 0,
+        'graph' => ['nodes' => [['id' => 't', 'kind' => 'OLD_NAME']], 'edges' => []],
+    ], $steps);
+
+    expect($migrated['version'])->toBe(Workflow::SCHEMA_VERSION);
+    expect($migrated['graph']['nodes'][0]['kind'])->toBe('manual_trigger');
+});
+
+it('refuses to migrate a FUTURE version DOWNWARD', function () {
+    // We can never know what a later version means. Leaving it untouched hands
+    // it to the existing version check, which reports it — rather than this
+    // silently "fixing" a document written by a newer runtime.
+    $doc = ['$schema' => Workflow::SCHEMA_URL, 'version' => 99, 'graph' => ['nodes' => [], 'edges' => []]];
+
+    expect(Workflow::migrate($doc, [0 => fn (array $s): array => $s]))->toBe($doc);
+
+    $result = Workflow::import($doc);
+    expect($result->ok)->toBeFalse();
+});
+
+it('leaves a document alone when the step table has no path for it', function () {
+    // A gap in the table is not a licence to guess. Unchanged means the version
+    // check reports it, which is the honest outcome.
+    $doc = ['$schema' => Workflow::SCHEMA_URL, 'version' => 0, 'graph' => ['nodes' => [], 'edges' => []]];
+
+    expect(Workflow::migrate($doc, []))->toBe($doc);
+});
+
+it('imports a CURRENT document unchanged — migration is not in the way', function () {
+    // The compatibility guard. Every graph in the field is v1, and the seam must
+    // be invisible to all of them.
+    $result = Workflow::import([
+        '$schema' => Workflow::SCHEMA_URL,
+        'version' => 1,
+        'graph' => ['nodes' => [['id' => 't', 'kind' => 'manual_trigger', 'position' => ['x' => 0, 'y' => 0]]], 'edges' => []],
+    ], lenient: true);
+
+    expect($result->ok)->toBeTrue();
+    expect($result->graph->nodes)->toHaveCount(1);
+});

@@ -8,6 +8,46 @@ upgrading.
 
 ---
 
+## 0.31.0 — 2026-08-25
+
+### Added
+
+- **`Workflow::migrate()` — a stored Op written against an OLDER schema now
+  upgrades on read instead of being rejected.**
+
+  The version has always been on the document. Only the TypeScript runtime acted
+  on it — this runtime compared it and errored on any mismatch. So the day schema
+  v2 was cut, **every stored Op would have hard-failed to import here**, and this
+  is where durable runs RESUME: a run parked on a human approval would have
+  become unresumable.
+
+  That could only ever be fixed BEFORE the bump. Afterwards the graphs are
+  already unreadable by the very code meant to migrate them.
+
+  Three rules, each with a reason:
+
+  - A **past** version migrates forward, step by step, to the current one.
+  - A **future** version is left ALONE. We cannot know what a later schema means,
+    and migrating downward would be guessing; untouched hands it to the version
+    check, which reports it honestly.
+  - A **gap** in the step table is left alone too. A missing step is not a
+    licence to guess.
+
+  **What to do: nothing.** The step table is empty because v1 is current, so
+  every document passes through untouched and behaviour is identical to before.
+  That is exactly the property that made it safe to add now rather than under
+  pressure later.
+
+  `migrate()` takes its step table as an argument, which is not decoration: with
+  only v1 in existence there is no old document to migrate, so a seam tested
+  against the built-in table would be a check that **cannot fail** — it would
+  pass identically against a function that returned its input. Verified by
+  reverting to exactly that and watching the forward-migration test go red.
+
+  The Python twin ships the identical seam in `fancy-flow` 0.7.0, and the
+  TypeScript one gained the same step-table shape in `@particle-academy/fancy-flow`
+  0.56.0. One design, three runtimes.
+
 ## 0.30.0 — 2026-08-25
 
 ### Added

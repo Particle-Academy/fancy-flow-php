@@ -29,6 +29,78 @@ final class Workflow
      *
      * @param string|array<string,mixed> $schema
      */
+    /**
+     * Every migration step, keyed by the version it upgrades FROM.
+     *
+     * A step keyed `N` takes a version-N document to version N+1. Empty today
+     * because v1 is current -- when a BREAKING bump lands, add the step here and
+     * every stored document upgrades on read, in this runtime and its twins.
+     *
+     * @return array<int, callable(array<string,mixed>): array<string,mixed>>
+     */
+    private static function migrations(): array
+    {
+        return [];
+    }
+
+    /**
+     * Upgrade a schema document to the current version, as far as it can go.
+     *
+     * ## Why this exists, and why it had to exist BEFORE it was needed
+     *
+     * The version has always been on the document; only the TypeScript runtime
+     * acted on it. This runtime and the Python one compared it and errored -- so
+     * the day schema v2 was cut, every stored Op would have hard-failed to
+     * import on both SERVER runtimes, which is where durable runs RESUME. A run
+     * parked on a human approval would have become unresumable, and the fix
+     * could not be applied afterwards: the graphs would already be unreadable by
+     * the very code meant to migrate them.
+     *
+     * ## The three rules, each with a reason
+     *
+     *  - **A PAST version migrates forward**, step by step, until it reaches the
+     *    current one.
+     *  - **A FUTURE version is left ALONE.** We cannot know what a later schema
+     *    means, and migrating downward would be guessing. Untouched hands it to
+     *    the version check, which reports it honestly.
+     *  - **A GAP in the table is left alone too.** A missing step is not a
+     *    licence to guess; the document reaches the version check unchanged.
+     *
+     * Nothing here changes behaviour today -- with an empty table every document
+     * passes through untouched -- which is exactly the property that makes it
+     * safe to add now rather than under pressure later.
+     *
+     * `$steps` is an argument rather than a hard-coded lookup because otherwise
+     * this seam could not be TESTED: with only v1 in existence there is no old
+     * document to migrate, and a test against the built-in table would pass
+     * identically against a `migrate()` that did nothing at all.
+     *
+     * @param  array<string,mixed>  $schema
+     * @param  array<int, callable(array<string,mixed>): array<string,mixed>>|null  $steps
+     * @return array<string,mixed>
+     */
+    public static function migrate(array $schema, ?array $steps = null): array
+    {
+        $steps ??= self::migrations();
+        $version = $schema['version'] ?? null;
+
+        if (! is_int($version) || $version >= self::SCHEMA_VERSION) {
+            return $schema;
+        }
+
+        while ($version < self::SCHEMA_VERSION) {
+            if (! isset($steps[$version])) {
+                return $schema;
+            }
+
+            $schema = ($steps[$version])($schema);
+            $version++;
+            $schema['version'] = $version;
+        }
+
+        return $schema;
+    }
+
     public static function import(
         string|array $schema,
         bool $lenient = false,
@@ -49,6 +121,12 @@ final class Workflow
                 [ImportIssue::error('Schema is not an object.')],
             );
         }
+
+        // Best-effort forward migration BEFORE the version check, so a document
+        // written against an older schema is upgraded rather than rejected. The
+        // check below is still the gate: anything migration could not resolve
+        // reaches it unchanged and is reported exactly as it was before.
+        $schema = self::migrate($schema);
 
         $version = $schema['version'] ?? null;
         if ($version !== self::SCHEMA_VERSION) {
