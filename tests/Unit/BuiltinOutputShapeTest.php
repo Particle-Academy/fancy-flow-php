@@ -140,7 +140,7 @@ it('declares the RELATION for kinds whose shape depends on their input', functio
         'switch_case' => 'input',
         'output' => 'input',
         'human_approval' => 'input',
-        'manual_trigger' => 'input',
+        'manual_trigger' => 'input-map-merged',
         'variable' => 'expression:value',
     ];
 
@@ -195,6 +195,6 @@ it('schedule_trigger composes a list WITH a merge, because its merge is top-leve
     // `wait`: ScheduleTriggerExecutor array_merges into the TOP level.
     $sched = kind('schedule_trigger');
 
-    expect($sched->emitsFor([]))->toBe('inputs-merged');
+    expect($sched->emitsFor([]))->toBe('input-map-merged');
     expect(array_column($sched->outputShapeFor([]), 'path'))->toBe(['cron', 'timezone']);
 });

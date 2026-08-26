@@ -213,8 +213,10 @@ final class Builtin
             // ───────────── Triggers ─────────────
             [
                 'name' => 'manual_trigger', 'category' => 'trigger', 'sideEffects' => 'none', 'label' => 'Manual',
-                // Read from ManualTriggerExecutor.php -- returns $ctx->inputs.
-                'emits' => 'input',
+                // ManualTriggerExecutor returns $ctx->inputs -- the raw MAP, not the
+                // `in` port. Flat at an entry point, port-keyed the moment the node
+                // has an inbound edge, which is why this is not `'input'`.
+                'emits' => 'input-map-merged',
                 'description' => 'Entry point fired when the user clicks Run.', 'icon' => '⚡',
                 'inputs' => [], 'outputs' => [['id' => 'out']],
             ],
@@ -235,7 +237,7 @@ final class Builtin
                 // ScheduleTriggerExecutor.php:23-28 array_merges its inputs into the
                 // TOP level alongside these two. Composition is correct HERE because
                 // the merge is genuinely top-level -- unlike `wait`, which nests.
-                'emits' => 'inputs-merged',
+                'emits' => 'input-map-merged',
                 'outputShape' => [
                     ['path' => 'cron', 'type' => 'string', 'description' => 'The cron expression that fired.'],
                     ['path' => 'timezone', 'type' => 'string', 'description' => 'The timezone it was evaluated in.'],

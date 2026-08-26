@@ -92,8 +92,10 @@ final class NodeKind
          * reader handles only in the form it met first.
          *
          * Values, and every one is TOP-LEVEL by construction:
-         *   `'input'`             emits its input unchanged
-         *   `'inputs-merged'`     emits the union of every input's fields
+         *   `'input'`             emits the `in` PORT's payload, unchanged
+         *   `'inputs-merged'`     emits the union of every input PAYLOAD's fields
+         *   `'input-map-merged'`  emits the raw input MAP merged in, whose shape
+         *                         DEPENDS ON POSITION in the graph
          *   `'expression:<key>'`  emits the shape the expression in that config
          *                         key names -- the KEY is part of the value,
          *                         because a consumer that hardcodes "the field
@@ -105,6 +107,27 @@ final class NodeKind
          * relation depends on how it was configured -- `transform` passes its
          * input through when no expression is set, and `merge` concatenates
          * rather than merging in `concat` mode.
+         *
+         * **`'inputs-merged'` and `'input-map-merged'` are two operations, not
+         * one with a positional rule a reader has to know.** `MergeExecutor`
+         * unwraps each port and unions the PAYLOADS' fields.
+         * `ScheduleTriggerExecutor` merges `$ctx->inputs` ITSELF.
+         *
+         * Those coincide only at an entry point, because
+         * `FlowRunner::collectInputs` seeds an entry node from
+         * `$initial[$node->id]` FLAT and keys every other node by
+         * `$edge->targetHandle ?? 'in'`. So `$ctx->inputs` is the payload at an
+         * entry point and a port-keyed map everywhere else.
+         *
+         * Give a `schedule_trigger` an inbound edge -- a subflow where the
+         * trigger is also a target -- and it emits `['cron', 'timezone', 'in' =>
+         * {...}]`. One keyword covering both would have over-permitted
+         * `{{ in.<upstream field> }}` when the real path is
+         * `{{ in.in.<field> }}`. `manual_trigger` is the same shape and is
+         * `'input-map-merged'` with nothing of its own to add.
+         *
+         * Named by the reference consumer: two names because they are two
+         * operations.
          *
          * **A relation with no destination can only express a TOP-LEVEL merge.**
          * `wait` returns `['waited' => …, 'duration' => …, 'input' => …]` -- it
