@@ -443,7 +443,31 @@ final class FlowRunner
                 return ['ports' => [$result['__port']], 'value' => $result['value'] ?? null];
             }
             if (isset($result['branch']) && is_string($result['branch'])) {
-                return ['ports' => [$result['branch']], 'value' => $result['value'] ?? $result];
+                // `array_key_exists`, NOT `??`. The two are different questions
+                // and only one of them is the one being asked:
+                //
+                //   no `value` key at all  -> the whole result IS the payload,
+                //                             which is what the fallback is for
+                //   `value` present, null  -> the payload is null, pass null on
+                //
+                // `?? $result` cannot tell them apart, so a branch whose payload
+                // was null leaked the WRAPPER downstream — every following node
+                // received `['branch' => 'x', 'value' => null]`, two fields no
+                // kind declares, while the fields it does declare were absent.
+                //
+                // The reachable path is the one that matters: `input('in', …)`
+                // is null exactly when `in` is bound to an explicit null, which
+                // is what an upstream `transform` produces when its dot-path
+                // does not resolve. So a run that had already quietly resolved
+                // to nothing then started emitting an undeclared shape too.
+                //
+                // `Port::only` never had this: its `?? null` yields null. Two
+                // sugars documented as equivalent, differing on the one input
+                // where it counts.
+                return [
+                    'ports' => [$result['branch']],
+                    'value' => array_key_exists('value', $result) ? $result['value'] : $result,
+                ];
             }
         }
 

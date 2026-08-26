@@ -8,6 +8,70 @@ upgrading.
 
 ---
 
+## 0.39.0 — 2026-08-26
+
+### Fixed
+
+- **A branching node whose payload is NULL emitted the wrapper downstream.**
+  `activatedPorts` unwrapped the two port sugars asymmetrically:
+
+  ```php
+  Port::only   ['__port' => …]  ->  $result['value'] ?? null
+  Port::branch ['branch' => …]  ->  $result['value'] ?? $result
+  ```
+
+  `??` collapses two different questions — *is there a `value` key* and *is the
+  value null*. With no key the whole result IS the payload, which is what the
+  fallback exists for; with a key holding null the payload is null. Collapsed,
+  `Port::branch($port, null)` sent every downstream node
+  `['branch' => 'x', 'value' => null]` — two fields no kind declares, while the
+  fields it does declare were absent.
+
+  Now `array_key_exists`, which keeps the fallback and answers the right
+  question. **All four runtimes shared this identically**, so no parity table
+  could have caught it: they agreed on being wrong, and a parity suite only sees
+  disagreement.
+
+  **Reachability, stated precisely because the first account was wrong.** It is
+  NOT reachable through `$ctx->input('in', $ctx->inputs)`, which is itself
+  `$this->inputs[$port] ?? $default` — a null `in` returns the DEFAULT, so the
+  built-in `branch`, `switch_case` and `human_approval` executors never hand
+  down a literal null. The same collapse one layer up masks it. It is reachable
+  from a HOST executor returning `Port::branch($port, null)` directly, which is
+  what the regression test does.
+
+  Found by the reference consumer reviewing something else, by reading the
+  CONSUMER of a return value rather than the return.
+
+## 0.38.0 — 2026-08-26
+
+### Added
+
+- **Runs the shared `flow/kind-declaration-surface` table.** 20 cases asserting
+  that this runtime declares the same things about the same kinds as the other
+  three — field SETS and `emits` relations, not behaviour.
+
+  Every other conformance table here pins what the engine DOES. Nothing pinned
+  what a kind DECLARES, and four capabilities were found present in one runtime
+  and absent in the others as a result. This is what makes a fifth loud.
+
+### Fixed
+
+- **`fancy-conformance` was pinned at `^0.13.0` and had been frozen six minors
+  behind.** A caret on a `0.x` admits only that minor, so `composer update`
+  reported success while installing nothing — and every shared table added since
+  0.13.0 reached this runtime never.
+
+  That is the failure this package's own tables exist to catch, in the
+  dependency that delivers them: a check that cannot receive new rows is a check
+  that slowly stops checking, and nothing reports it because the suite stays
+  green on the rows it already had.
+
+  Now `^0.19.0`. **A conformance dependency has to track**, unlike a normal dev
+  dependency where a caret pin is deliberately the version the suite was built
+  against — the whole point of this one is that new shared rows arrive and fail
+  whichever runtime drifted.
+
 ## 0.37.0 — 2026-08-26
 
 ### Added
