@@ -33,6 +33,7 @@ function kind(string $name): NodeKind
 it('declares the fields of kinds whose output is fully enumerable', function () {
     $cases = [
         'embed_search' => ['query', 'matches'],
+        'api_request' => ['status', 'headers', 'body'],
         'llm_router' => ['route', 'reason', 'input'],
         'notify' => ['sent', 'channel', 'to', 'message'],
         'webhook_out' => ['sent', 'status', 'response'],

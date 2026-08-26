@@ -509,6 +509,14 @@ final class Builtin
             // ───────────── IO ─────────────
             [
                 'name' => 'api_request', 'category' => 'io', 'label' => 'API Request',
+                // The HttpClient contract at Nodes/Support/HttpClient.php:16 --
+                // array{status:int,headers:array<string,mixed>,body:mixed}. The
+                // executor returns it unchanged (ApiRequestExecutor.php:31).
+                'outputShape' => [
+                    ['path' => 'status', 'type' => 'number', 'description' => 'HTTP status code.'],
+                    ['path' => 'headers', 'type' => 'object', 'description' => 'Response headers.'],
+                    ['path' => 'body', 'type' => 'unknown', 'description' => 'Parsed response body.'],
+                ],
                 'description' => 'HTTP request to any URL.', 'icon' => '↔',
                 'configSchema' => [
                     $httpMethod,

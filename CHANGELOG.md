@@ -8,6 +8,21 @@ upgrading.
 
 ---
 
+## 0.35.0 — 2026-08-26
+
+### Added
+
+- **`api_request` declares `status` / `headers` / `body`**, from the
+  `HttpClient` contract at `Nodes/Support/HttpClient.php:16` —
+  `array{status:int,headers:array<string,mixed>,body:mixed}` — which
+  `ApiRequestExecutor.php:31` returns unchanged.
+
+  Found by comparing the two runtimes rather than by reading either alone: the
+  TypeScript twin had declared this kind and PHP had not, so a PHP host could
+  not check `{{ in.status }}` on the one kind whose shape both runtimes already
+  agreed on. **Eleven kinds now declare here; ten in TypeScript** — the
+  difference is `agent`, which TypeScript has no kind for.
+
 ## 0.34.0 — 2026-08-26
 
 ### Added
