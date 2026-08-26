@@ -93,7 +93,25 @@ final class ExecutionContext
     /** Read one input port's value (default port `in`). */
     public function input(string $port = 'in', mixed $default = null): mixed
     {
-        return $this->inputs[$port] ?? $default;
+        // `array_key_exists`, NOT `??`. A port BOUND to null is not an ABSENT
+        // port, and only the absent one may fall back.
+        //
+        // Eleven executors call `$ctx->input('in', $ctx->inputs)`, whose default
+        // is the whole inputs map. With `??`, a port holding an explicit null
+        // did not yield null — it yielded every input the node had. And unlike
+        // the wrapper leak this sits underneath, the substitute is PLAUSIBLE: an
+        // inputs map looks exactly like real data, so a downstream node reads
+        // fields that came from the wrong place and nothing looks wrong.
+        //
+        // The fallback itself is right and stays. A trigger has no `in` edge,
+        // and "the `in` port, or everything if there is no `in` port" is what
+        // lets an entry node read its seeded payload.
+        //
+        // Third layer of one collapse — this, `activatedPorts`, and the
+        // regression test written for `activatedPorts`, which asserted with
+        // `?? '__absent__'` and could not see the null it tested for. The rule:
+        // **`??` is safe only where null is not a legal value.**
+        return array_key_exists($port, $this->inputs) ? $this->inputs[$port] : $default;
     }
 
     /** The node's resolved config array. */
