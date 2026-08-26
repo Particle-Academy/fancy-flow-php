@@ -8,6 +8,67 @@ upgrading.
 
 ---
 
+## 0.32.0 — 2026-08-25
+
+### Fixed
+
+- **`sideEffects` was declared by NOTHING, so the retry protection built on it
+  could never engage.** Zero of the 26 builtin kinds set it, so
+  `NodeRetryPolicy::isUnsafeToReplay()` returned `false` for every node in
+  existence and the one-attempt pin was unreachable.
+
+  The docs promise otherwise **twice**: `NodeRetryPolicy`'s own docblock says
+  *"a node declaring `sideEffects: unsafe-to-replay` is pinned to ONE attempt"*
+  and offers a PR-opening node filing twice as the motivating example, and
+  `AGENTS.md` says *"per_node pins it to one attempt (never double-files)"*. The
+  reading half shipped in 0.10; the declaring half never did.
+
+  Same shape as `graph.inputs` being dropped on import — two of three links
+  present and the chain silently dead. Reported by a consumer who **measured** it
+  rather than reading it.
+
+  **19 kinds now declare it.** `webhook_out` and `notify` are
+  `unsafe-to-replay` — both deliver to somebody else, and a second attempt is a
+  second delivery. `data_store`, `memory_store` and `variable` are `idempotent`
+  (keyed writes). The pure logic, trigger, output and structural kinds are
+  `none`.
+
+  **Seven are deliberately left undeclared**, and a test pins that exact list so
+  adding a kind and *forgetting* the field shows up rather than silently joining
+  the set no retry rule can see:
+
+  - `api_request` — the safety of a retry is the HTTP **method**, which is
+    config, not kind. Declaring it unsafe would make every read-only call fail
+    permanently, and `AGENTS.md` cites flaky HTTP as the *retryable* example.
+  - `llm_call`, `llm_router` — a retry costs money and returns a different
+    answer, but writes nothing external. Neither `idempotent` nor
+    `unsafe-to-replay` is true.
+  - `tool_use` — its effects are the host's tool.
+  - `subflow` — its effects are the child graph's.
+  - `user_input`, `human_approval` — these pause rather than fail; retry is not
+    the axis they live on.
+
+  Any of them can be pinned by a host that knows its own usage, via the per-kind
+  `queue.node_tries` override.
+
+  **What to do:** nothing, unless you were relying on `webhook_out` or `notify`
+  retrying. They now get one attempt, which is what the documentation always
+  said they got.
+
+### Added
+
+- A **liveness check** for the mechanism, which is the part that was actually
+  missing. `SideEffectsAreDeclaredTest` asserts a real kind is genuinely pinned
+  to one attempt, that an ordinary kind still takes its configured retries, that
+  only the three vocabulary values are ever used (a typo is as dead as a null),
+  and that the undeclared list is exactly the seven above.
+
+  Verified by reverting all 19 declarations: the liveness test goes red against
+  the state that shipped. Worth noting that the vocabulary check reported
+  **"risky — no assertions"** in that state, because it iterates a set that was
+  empty. A check that passes over nothing is the failure this whole class of bug
+  is made of.
+
 ## 0.31.0 — 2026-08-25
 
 ### Added

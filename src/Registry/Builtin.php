@@ -212,12 +212,12 @@ final class Builtin
         return [
             // ───────────── Triggers ─────────────
             [
-                'name' => 'manual_trigger', 'category' => 'trigger', 'label' => 'Manual',
+                'name' => 'manual_trigger', 'category' => 'trigger', 'sideEffects' => 'none', 'label' => 'Manual',
                 'description' => 'Entry point fired when the user clicks Run.', 'icon' => '⚡',
                 'inputs' => [], 'outputs' => [['id' => 'out']],
             ],
             [
-                'name' => 'webhook_trigger', 'category' => 'trigger', 'label' => 'Webhook',
+                'name' => 'webhook_trigger', 'category' => 'trigger', 'sideEffects' => 'none', 'label' => 'Webhook',
                 'description' => 'Triggered by an inbound HTTP request to a host-provided URL.', 'icon' => '📡',
                 'inputs' => [], 'outputs' => [['id' => 'out', 'label' => 'payload']],
                 'configSchema' => [
@@ -229,7 +229,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'schedule_trigger', 'category' => 'trigger', 'label' => 'Schedule',
+                'name' => 'schedule_trigger', 'category' => 'trigger', 'sideEffects' => 'none', 'label' => 'Schedule',
                 'description' => 'Fires on a cron schedule (host-implemented).', 'icon' => '⏱',
                 'inputs' => [], 'outputs' => [['id' => 'out']],
                 'configSchema' => [
@@ -254,7 +254,7 @@ final class Builtin
 
             // ───────────── Logic ─────────────
             [
-                'name' => 'branch', 'category' => 'logic', 'label' => 'Branch',
+                'name' => 'branch', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Branch',
                 'description' => 'Multi-way branch on a condition or value.', 'icon' => '◇',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'true', 'label' => 'true'], ['id' => 'false', 'label' => 'false']],
                 'configSchema' => [
@@ -262,7 +262,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'switch_case', 'category' => 'logic', 'label' => 'Switch',
+                'name' => 'switch_case', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Switch',
                 'description' => 'Route to one of N labelled outputs based on a key.', 'icon' => '⤳',
                 'inputs' => [['id' => 'in']],
                 'outputs' => [['id' => 'case_a', 'label' => 'a'], ['id' => 'case_b', 'label' => 'b'], ['id' => 'default', 'label' => 'default']],
@@ -272,7 +272,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'for_each', 'category' => 'logic', 'label' => 'For Each',
+                'name' => 'for_each', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'For Each',
                 'description' => 'Iterate over a list, emitting each item on `item`.', 'icon' => '↻',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'item', 'label' => 'item'], ['id' => 'done', 'label' => 'done']],
                 'configSchema' => [
@@ -309,7 +309,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'merge', 'category' => 'logic', 'label' => 'Merge',
+                'name' => 'merge', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Merge',
                 'description' => 'Combine multiple inputs into one object or array.', 'icon' => '⊕',
                 'inputs' => [['id' => 'a'], ['id' => 'b']], 'outputs' => [['id' => 'out']],
                 'configSchema' => [
@@ -318,7 +318,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'wait', 'category' => 'logic', 'label' => 'Wait',
+                'name' => 'wait', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Wait',
                 'description' => 'Sleep or wait for an external event.', 'icon' => '⏸',
                 'configSchema' => [
                     ['type' => 'select', 'key' => 'mode', 'label' => 'Mode', 'default' => 'duration',
@@ -327,7 +327,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'transform', 'category' => 'logic', 'label' => 'Transform',
+                'name' => 'transform', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Transform',
                 'description' => 'Reshape data with an expression.', 'icon' => 'ƒ',
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'expression', 'label' => 'Expression',
@@ -337,7 +337,7 @@ final class Builtin
 
             // ───────────── Data ─────────────
             [
-                'name' => 'memory_store', 'category' => 'data', 'label' => 'Memory Store',
+                'name' => 'memory_store', 'category' => 'data', 'sideEffects' => 'idempotent', 'label' => 'Memory Store',
                 'description' => 'Read or write per-conversation memory.', 'icon' => '🧠',
                 'configSchema' => [
                     ['type' => 'select', 'key' => 'operation', 'label' => 'Operation', 'required' => true, 'default' => 'read',
@@ -348,7 +348,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'data_store', 'category' => 'data', 'label' => 'Data Store',
+                'name' => 'data_store', 'category' => 'data', 'sideEffects' => 'idempotent', 'label' => 'Data Store',
                 'description' => 'Key-value or table read/write against a host store.', 'icon' => '🗃',
                 'configSchema' => [
                     ['type' => 'select', 'key' => 'operation', 'label' => 'Operation', 'required' => true, 'default' => 'get',
@@ -364,7 +364,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'variable', 'category' => 'data', 'label' => 'Variable',
+                'name' => 'variable', 'category' => 'data', 'sideEffects' => 'idempotent', 'label' => 'Variable',
                 'description' => 'Workflow-scoped value used by other nodes.', 'icon' => '𝓍',
                 'configSchema' => [
                     ['type' => 'text', 'key' => 'name', 'label' => 'Name', 'required' => true],
@@ -439,7 +439,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'embed_search', 'category' => 'ai', 'label' => 'Embed & Search',
+                'name' => 'embed_search', 'category' => 'ai', 'sideEffects' => 'none', 'label' => 'Embed & Search',
                 'description' => 'Embed a query and search a vector store.', 'icon' => '✺',
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'query', 'label' => 'Query', 'required' => true, 'example' => '{{ $json.question }}'],
@@ -461,7 +461,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'webhook_out', 'category' => 'io', 'label' => 'Send Webhook',
+                'name' => 'webhook_out', 'category' => 'io', 'sideEffects' => 'unsafe-to-replay', 'label' => 'Send Webhook',
                 'description' => 'POST a payload to a configured URL.', 'icon' => '↗',
                 'configSchema' => [
                     ['type' => 'text', 'key' => 'url', 'label' => 'URL', 'required' => true],
@@ -485,7 +485,7 @@ final class Builtin
                 ],
             ],
             [
-                'name' => 'notify', 'category' => 'human', 'label' => 'Notify',
+                'name' => 'notify', 'category' => 'human', 'sideEffects' => 'unsafe-to-replay', 'label' => 'Notify',
                 'description' => 'Send a message via Slack / email / SMS / etc.', 'icon' => '🔔',
                 'configSchema' => [
                     ['type' => 'select', 'key' => 'channel', 'label' => 'Channel', 'default' => 'slack',
@@ -500,12 +500,12 @@ final class Builtin
 
             // ───────────── Output ─────────────
             [
-                'name' => 'output', 'category' => 'output', 'label' => 'Output',
+                'name' => 'output', 'category' => 'output', 'sideEffects' => 'none', 'label' => 'Output',
                 'description' => "Terminal node — captures the workflow's result.", 'icon' => '●',
                 'inputs' => [['id' => 'in']], 'outputs' => [],
             ],
             [
-                'name' => 'log', 'category' => 'output', 'label' => 'Log',
+                'name' => 'log', 'category' => 'output', 'sideEffects' => 'none', 'label' => 'Log',
                 'description' => 'Send to the run feed.', 'icon' => '≡',
                 'inputs' => [['id' => 'in']], 'outputs' => [],
                 'configSchema' => [
@@ -534,12 +534,12 @@ final class Builtin
     {
         return [
             [
-                'name' => 'note', 'category' => 'custom', 'label' => 'Note',
+                'name' => 'note', 'category' => 'custom', 'sideEffects' => 'none', 'label' => 'Note',
                 'description' => 'A canvas annotation. Never executed.', 'icon' => '🗒',
                 'inputs' => [], 'outputs' => [],
             ],
             [
-                'name' => 'subgraph', 'category' => 'custom', 'label' => 'Subgraph',
+                'name' => 'subgraph', 'category' => 'custom', 'sideEffects' => 'none', 'label' => 'Subgraph',
                 'description' => 'Runs a nested workflow.', 'icon' => '▣',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'out']],
                 'configSchema' => [
