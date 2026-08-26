@@ -8,6 +8,32 @@ upgrading.
 
 ---
 
+## 0.36.0 — 2026-08-26
+
+### Fixed
+
+- **`agent` was missing `truncated`, so a validator refused a real field.**
+  `AgentExecutor` has TWO returns: `:52` on the normal path and `:64` on the
+  max-steps path, which adds `truncated`. The declaration cited only `:52`.
+
+  A consumer checking references against the declaration therefore **refused
+  `{{ in.truncated }}`** — a field that genuinely exists, on the path an author
+  is most likely to be debugging, and a false rejection is one the author cannot
+  comply with.
+
+  **The method needed one more line: read EVERY return, not the top one.**
+  `grep -n "return \[" <executor>` before writing a row. Every other declared
+  kind was re-swept the same way; `llm_router`'s second return is an empty early
+  bail and adds no fields, and the rest have exactly one. This was the only
+  incomplete row.
+
+  `truncated` appears on one path only — the variants case arriving on its own.
+  Declared flat until a shape can express that: over-permitting it on the normal
+  path costs nothing, omitting it refuses a valid reference.
+
+  Caught within minutes of release by a consumer's two-way divergence test,
+  which also found the matching error in their own table.
+
 ## 0.35.0 — 2026-08-26
 
 ### Added

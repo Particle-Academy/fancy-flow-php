@@ -40,7 +40,7 @@ it('declares the fields of kinds whose output is fully enumerable', function () 
         'for_each' => ['items', 'count'],
         'wait' => ['waited', 'duration', 'input'],
         'log' => ['logged', 'level'],
-        'agent' => ['text', 'steps'],
+        'agent' => ['text', 'steps', 'truncated'],
     ];
 
     foreach ($cases as $name => $expected) {

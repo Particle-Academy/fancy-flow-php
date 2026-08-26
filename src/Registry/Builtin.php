@@ -644,10 +644,23 @@ final class Builtin
     {
         return self::canonicalize([
             'name' => 'agent', 'category' => 'ai', 'label' => 'Agent', 'icon' => '✦',
-                // Read from AgentExecutor.php:52.
+                // Read from AgentExecutor.php:52 AND :64 -- it has TWO returns, and
+                // the second (the max-steps path) adds `truncated`. Citing only the
+                // first made a validator refuse {{ in.truncated }}: a real field, on
+                // the path an author is most likely to be debugging.
+                //
+                // READ EVERY RETURN, not the top one. That is the method, and this
+                // row is why it is written down.
+                //
+                // `truncated` appears on ONE path only -- the variants case arriving
+                // on its own. Until a shape can express that it is declared flat:
+                // over-permitting it on the normal path costs nothing, while omitting
+                // it refuses a valid reference, and a false rejection is one the
+                // author cannot comply with.
                 'outputShape' => [
                     ['path' => 'text', 'type' => 'string', 'description' => 'The agent\'s final answer.'],
                     ['path' => 'steps', 'type' => 'array', 'description' => 'Each prompt/response round it took.'],
+                    ['path' => 'truncated', 'type' => 'boolean', 'description' => 'Present when the agent stopped at its step limit.'],
                 ],
             'description' => 'LLM agent with tools + multi-step reasoning.',
             'configSchema' => [
