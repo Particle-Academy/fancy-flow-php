@@ -9,6 +9,8 @@ use FancyFlow\Laravel\Facades\FancyFlow;
 use FancyFlow\Laravel\Jobs\AdvanceWorkflowJob;
 use FancyFlow\Laravel\Jobs\RunNodeJob;
 use FancyFlow\Laravel\Jobs\RunWorkflowJob;
+use FancyFlow\Laravel\Runs\Frontier;
+use FancyFlow\Laravel\Runs\NodeClaims;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Models\WorkflowRunNode;
 use FancyFlow\Runtime\ExecutionContext;
@@ -985,4 +987,164 @@ it('fails a durable run whose props do not satisfy the declaration', function ()
     $run->refresh();
 
     expect($run->status)->toBe(WorkflowRun::FAILED);
+});
+
+it('never has more nodes in flight than maxConcurrent allows', function () {
+    // The property, asserted where it is actually observable: at the moment a
+    // node executes, how many nodes are CLAIMED?
+    //
+    // Counting dispatches would be weaker. The cap has to hold under RACING
+    // advances -- two nodes settling at once each trigger an AdvanceWorkflowJob,
+    // and a naive per-batch limit would let each dispatch its own quota. So the
+    // limit is measured against work already IN FLIGHT, not against batch size,
+    // and this is the assertion that can tell the two apart.
+    PnLog::$ran = [];
+    $seen = [];
+
+    FancyFlow::extend('census', function (ExecutionContext $ctx) use (&$seen): mixed {
+        PnLog::$ran[] = $ctx->node->id;
+        $seen[] = WorkflowRunNode::query()
+            ->where('status', WorkflowRunNode::CLAIMED)
+            ->count();
+
+        return $ctx->node->id;
+    }, [
+        'name' => 'census', 'category' => 'logic', 'label' => 'Census',
+        'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'out']],
+    ]);
+
+    // A trigger fanning out to three independent nodes: without a limit all
+    // three become ready together and all three are dispatched at once.
+    $run = FancyFlow::dispatch(
+        pnSchema(
+            [
+                pnNode('t', 'manual_trigger'),
+                pnNode('a', 'census'),
+                pnNode('b', 'census'),
+                pnNode('c', 'census'),
+            ],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b'), pnEdge('e3', 't', 'c')],
+        ),
+        ['t' => ['n' => 1]],
+        maxConcurrent: 1,
+    );
+
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect(PnLog::$ran)->toHaveCount(3);
+    expect(max($seen))->toBe(1, 'more than one node was in flight under maxConcurrent: 1');
+});
+
+it('runs a fan-out in a deterministic order when serialised', function () {
+    // The second thing they asked for, and it is NOT implied by the first. Ops
+    // are authored by non-engineers through a chat agent, and "what ran, in what
+    // order" is the first question anyone asks of a failed run -- so a limit
+    // that bounded concurrency but shuffled the order would answer the cost
+    // problem and leave the legibility one.
+    //
+    // Order follows the graph's own node declaration, because Frontier walks
+    // `$graph->nodes` and array_keys preserves insertion. Same graph, same
+    // order, every run.
+    PnLog::$ran = [];
+    pnRecorder();
+
+    FancyFlow::dispatch(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec'), pnNode('c', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b'), pnEdge('e3', 't', 'c')],
+        ),
+        ['t' => ['n' => 1]],
+        maxConcurrent: 1,
+    );
+
+    expect(PnLog::$ran)->toBe(['a', 'b', 'c']);
+});
+
+it('leaves an unlimited run dispatching the whole frontier', function () {
+    // The compatibility guard. Unset must mean today's behaviour exactly, or
+    // this feature becomes a silent throughput regression for every existing
+    // consumer.
+    PnLog::$ran = [];
+    pnRecorder();
+
+    $run = FancyFlow::dispatch(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec'), pnNode('c', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b'), pnEdge('e3', 't', 'c')],
+        ),
+        ['t' => ['n' => 1]],
+    );
+
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+    expect(PnLog::$ran)->toHaveCount(3);
+});
+
+it('counts work ALREADY IN FLIGHT, not just the size of one batch', function () {
+    // The discriminating test, and the reason the two above are not enough.
+    //
+    // Under the synchronous pump a node is dispatched, runs and settles before
+    // the next advance, so nothing is ever concurrently claimed -- and a NAIVE
+    // per-batch cap produces exactly the same observations. Both would pass.
+    //
+    // Production is not synchronous. Two nodes settling at once each trigger an
+    // AdvanceWorkflowJob, and a per-batch cap lets each dispatch its own quota,
+    // so a limit of 1 puts 2 in flight. This reproduces that by CLAIMING a node
+    // out of band and then advancing: the budget must already be spent.
+    pnRecorder();
+    Queue::fake();
+
+    $run = pnRun(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b')],
+        ),
+        ['t' => []],
+        ['max_concurrent' => 1],
+    );
+
+    // `t` is settled so both `a` and `b` are ready; `a` is claimed by a worker
+    // that has not finished. One slot, one node holding it.
+    NodeClaims::claim($run->run_key, 't', 'w0');
+    NodeClaims::complete($run->run_key, 't', null, ['out']);
+    NodeClaims::claim($run->run_key, 'a', 'w1');
+
+    Queue::fake();
+    // `Queue::fake()` intercepts `dispatchSync` too, so dispatching the advance
+    // would fake the very job under test and assert over something that never
+    // ran. Calling `handle()` through the container runs it for real while the
+    // fake still records what IT dispatches -- which is the thing being measured.
+    app()->call([new AdvanceWorkflowJob($run->run_key), 'handle']);
+
+    // Nothing new may go out: the single slot is taken. A per-batch cap would
+    // have dispatched `b` here, and the run would have had two nodes in flight
+    // under a limit of one.
+    Queue::assertNotPushed(RunNodeJob::class);
+});
+
+it('CONTROL: the same setup DOES dispatch when the budget has room', function () {
+    // Without this, the test above passes over a broken setup: assertNotPushed
+    // succeeds just as well when nothing could ever have been dispatched. Same
+    // graph, same claim, one more slot -- `b` must go out.
+    pnRecorder();
+
+    $run = pnRun(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b')],
+        ),
+        ['t' => []],
+        ['max_concurrent' => 2],
+    );
+
+    NodeClaims::claim($run->run_key, 't', 'w0');
+    NodeClaims::complete($run->run_key, 't', null, ['out']);
+    NodeClaims::claim($run->run_key, 'a', 'w1');
+
+    Queue::fake();
+    app()->call([new AdvanceWorkflowJob($run->run_key), 'handle']);
+
+    Queue::assertPushed(RunNodeJob::class);
 });

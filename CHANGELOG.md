@@ -8,6 +8,54 @@ upgrading.
 
 ---
 
+## 0.30.0 — 2026-08-25
+
+### Added
+
+- **`maxConcurrent` — cap how many of a run's nodes are in flight at once, or
+  run a graph serially** (fancy-flow-php#11). Per run, or as a deployment
+  default:
+
+  ```php
+  FancyFlow::dispatch($flow, maxConcurrent: 1);   // one node at a time
+  // or: FANCY_FLOW_MAX_CONCURRENT=1
+  ```
+
+  `AdvanceWorkflowJob` dispatched a job for **every** node in the ready frontier
+  with no way to ask for fewer — `queue.drain_limit` goes the other way, letting
+  one job drain *more* inline. Three things that costs, all reported from
+  production: several `llm_call` nodes becoming ready together fire concurrently
+  at the same provider; a fanning frontier makes *"what ran, in what order"*
+  non-deterministic between runs of the **same** graph, which is the first
+  question anyone asks of a failed run; and two nodes writing the same record are
+  ordered only by luck.
+
+  Worker topology (one worker on the queue) already achieves this, but it is a
+  deployment-wide setting standing in for a per-run one, and it stops being true
+  the moment anyone scales the worker for throughput.
+
+  **The budget is measured against work already IN FLIGHT, not against the size
+  of one batch**, and that distinction is the whole correctness argument. Two
+  nodes settling at once each trigger an `AdvanceWorkflowJob`, so a per-batch cap
+  would let each dispatch its own quota — the limit would hold on paper and not
+  in production.
+
+  Serialised runs are **deterministically ordered** by the graph's own node
+  declaration, because `Frontier` walks `$graph->nodes` and `array_keys`
+  preserves insertion. Bounding concurrency without fixing the order would answer
+  the cost problem and leave the legibility one.
+
+  A `PAUSED` node is deliberately **not** counted: a human gate holds no worker,
+  so a run parked on an approval would otherwise consume its budget indefinitely
+  and every parallel branch would stop dead behind a person. A limit of `0` is
+  treated as unlimited rather than honoured — honouring it would deadlock a run
+  with nothing able to start and nothing to re-trigger an advance, and a config
+  typo should not be a way to hang a workflow forever.
+
+  **What to do:** run `php artisan migrate` for the new nullable
+  `max_concurrent` column. Unset is unlimited, which is exactly today's
+  behaviour.
+
 ## 0.29.0 — 2026-08-25
 
 ### Fixed

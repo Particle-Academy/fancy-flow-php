@@ -155,13 +155,32 @@ final class AdvanceWorkflowJob implements ShouldQueue
         $run->forceFill(['node_outputs' => $outputs])->save();
 
         if ($frontier['ready'] !== []) {
-            foreach ($frontier['ready'] as $nodeId) {
+            // Dispatch at most as many as the run's concurrency budget allows.
+            //
+            // The budget is measured against work ALREADY IN FLIGHT, not against
+            // the size of this batch, and that distinction is the whole
+            // correctness argument. Two nodes settling at once each trigger an
+            // AdvanceWorkflowJob, so a per-batch limit would let each dispatch
+            // its own quota and the cap would hold on paper and not in
+            // production. Counting claims is the only version that survives the
+            // race this driver exists to tolerate.
+            //
+            // Ordering is the graph's own node order: Frontier walks
+            // `$graph->nodes` and array_keys preserves insertion, so the same
+            // graph serialises the same way on every run. That is the second
+            // half of what a serial mode is for — "what ran, in what order" has
+            // to be the same answer twice, not just a smaller number at a time.
+            foreach ($this->withinBudget($run, $state, $frontier['ready']) as $nodeId) {
                 $node = $graph->node($nodeId);
                 if ($node !== null) {
                     RunNodeJob::dispatchFor($this->runKey, $node, $kinds);
                 }
             }
 
+            // Returns even when the budget dispatched NOTHING. Something is in
+            // flight by definition in that case, and its settle re-enters this
+            // job — falling through to the "nothing runnable" branch below would
+            // read a throttled run as a stalled one.
             return;
         }
 
@@ -301,4 +320,41 @@ final class AdvanceWorkflowJob implements ShouldQueue
 
         return $earliest === null ? 0.0 : (float) (Carbon::now()->getTimestampMs() - $earliest->getTimestampMs());
     }
+
+    /**
+     * The slice of the ready frontier this run may dispatch right now.
+     *
+     * Null / absent / <= 0 means unlimited, which is what this package has
+     * always done: the whole frontier goes out at once. A limit of 0 is treated
+     * as unlimited rather than honoured, because honouring it would deadlock the
+     * run with no node able to start and nothing to re-trigger an advance -- a
+     * config typo should not be a way to hang a workflow forever.
+     *
+     * @param  array<string,array{status:string,ports:list<string>}>  $state
+     * @param  list<string>  $ready
+     * @return list<string>
+     */
+    private function withinBudget(WorkflowRun $run, array $state, array $ready): array
+    {
+        $limit = $run->max_concurrent ?? config('fancy-flow.queue.max_concurrent');
+        $limit = is_numeric($limit) ? (int) $limit : null;
+
+        if ($limit === null || $limit <= 0) {
+            return $ready;
+        }
+
+        // PAUSED is deliberately NOT counted. A human gate holds no worker --
+        // RunNodeJob records the pause and returns -- so a run parked on an
+        // approval would otherwise consume its whole budget indefinitely and
+        // every parallel branch would stop dead behind a person.
+        $inFlight = 0;
+        foreach ($state as $entry) {
+            if ($entry['status'] === WorkflowRunNode::CLAIMED) {
+                $inFlight++;
+            }
+        }
+
+        return array_slice($ready, 0, max(0, $limit - $inFlight));
+    }
+
 }

@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property array<string,mixed>|null $initial_inputs
  * @property list<string>|null        $entry_nodes
  * @property array<string,mixed>|null $props
+ * @property int|null                 $max_concurrent
  * @property array<string,mixed>|null $node_outputs
  * @property array<string,mixed>|null $outputs
  * @property array<string,bool>|null  $approvals

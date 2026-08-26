@@ -112,6 +112,22 @@ return [
         'tries' => 1,
         'backoff' => 0,
 
+        // How many of ONE RUN's nodes may be in flight at once, for "per_node"
+        // only. Null is unlimited: the whole ready frontier is dispatched, which
+        // is what this package has always done.
+        //
+        // `1` serialises a run -- the next node is dispatched only once the
+        // previous has settled. Three reasons a consumer asks for it: several
+        // `llm_call` nodes becoming ready together fire concurrently at the same
+        // provider; a fanning frontier makes "what ran, in what order"
+        // non-deterministic between runs of the SAME graph; and two nodes
+        // writing the same record are ordered only by luck.
+        //
+        // Worker topology (one worker on the queue) achieves the same thing, but
+        // it is deployment-wide and stops being true the moment anyone scales
+        // the worker. A per-run override is `FancyFlow::dispatch(maxConcurrent:)`.
+        'max_concurrent' => env('FANCY_FLOW_MAX_CONCURRENT'),
+
         // Per-kind attempt overrides, for "per_node" only. Keyed by kind id
         // (bare or namespaced — both resolve). A kind declaring
         // `sideEffects: unsafe-to-replay` is pinned to 1 regardless: the node
