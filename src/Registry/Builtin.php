@@ -213,6 +213,8 @@ final class Builtin
             // ───────────── Triggers ─────────────
             [
                 'name' => 'manual_trigger', 'category' => 'trigger', 'sideEffects' => 'none', 'label' => 'Manual',
+                // Read from ManualTriggerExecutor.php -- returns $ctx->inputs.
+                'emits' => 'input',
                 'description' => 'Entry point fired when the user clicks Run.', 'icon' => '⚡',
                 'inputs' => [], 'outputs' => [['id' => 'out']],
             ],
@@ -230,6 +232,14 @@ final class Builtin
             ],
             [
                 'name' => 'schedule_trigger', 'category' => 'trigger', 'sideEffects' => 'none', 'label' => 'Schedule',
+                // ScheduleTriggerExecutor.php:23-28 array_merges its inputs into the
+                // TOP level alongside these two. Composition is correct HERE because
+                // the merge is genuinely top-level -- unlike `wait`, which nests.
+                'emits' => 'inputs-merged',
+                'outputShape' => [
+                    ['path' => 'cron', 'type' => 'string', 'description' => 'The cron expression that fired.'],
+                    ['path' => 'timezone', 'type' => 'string', 'description' => 'The timezone it was evaluated in.'],
+                ],
                 'description' => 'Fires on a cron schedule (host-implemented).', 'icon' => '⏱',
                 'inputs' => [], 'outputs' => [['id' => 'out']],
                 'configSchema' => [
@@ -270,6 +280,8 @@ final class Builtin
             // ───────────── Logic ─────────────
             [
                 'name' => 'branch', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Branch',
+                // Read from BranchExecutor.php -- Port::branch($port, $ctx->input('in', $ctx->inputs)).
+                'emits' => 'input',
                 'description' => 'Multi-way branch on a condition or value.', 'icon' => '◇',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'true', 'label' => 'true'], ['id' => 'false', 'label' => 'false']],
                 'configSchema' => [
@@ -278,6 +290,8 @@ final class Builtin
             ],
             [
                 'name' => 'switch_case', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Switch',
+                // Read from SwitchCaseExecutor.php -- Port::only($port, $ctx->input('in', ...)).
+                'emits' => 'input',
                 'description' => 'Route to one of N labelled outputs based on a key.', 'icon' => '⤳',
                 'inputs' => [['id' => 'in']],
                 'outputs' => [['id' => 'case_a', 'label' => 'a'], ['id' => 'case_b', 'label' => 'b'], ['id' => 'default', 'label' => 'default']],
@@ -330,6 +344,15 @@ final class Builtin
             ],
             [
                 'name' => 'merge', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Merge',
+                // MergeExecutor.php: mode 'merge' array_merges every assoc input at
+                // the TOP level; mode 'concat' builds a list instead, whose elements
+                // are not addressable as fields. So the relation is config-dependent,
+                // and `concat` declares NOTHING rather than an empty field list --
+                // `[]` would claim "emits no fields" of a kind that emits a list,
+                // which is false and would refuse every reference.
+                'emits' => static fn (array $config): ?string => ($config['mode'] ?? 'merge') === 'concat'
+                    ? null
+                    : 'inputs-merged',
                 'description' => 'Combine multiple inputs into one object or array.', 'icon' => '⊕',
                 'inputs' => [['id' => 'a'], ['id' => 'b']], 'outputs' => [['id' => 'out']],
                 'configSchema' => [
@@ -354,6 +377,13 @@ final class Builtin
             ],
             [
                 'name' => 'transform', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Transform',
+                // TransformExecutor.php has TWO returns: $ctx->input('in', ...) when
+                // no expression is configured, else Expr::evaluate($expression, ...).
+                // So the relation itself depends on config -- the Closure form the
+                // reference consumer proposed, using machinery outputShape already had.
+                'emits' => static fn (array $config): string => ($config['expression'] ?? '') === ''
+                    ? 'input'
+                    : 'expression:expression',
                 'description' => 'Reshape data with an expression.', 'icon' => 'ƒ',
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'expression', 'label' => 'Expression',
@@ -391,6 +421,8 @@ final class Builtin
             ],
             [
                 'name' => 'variable', 'category' => 'data', 'sideEffects' => 'idempotent', 'label' => 'Variable',
+                // Read from VariableExecutor.php -- Expr::evaluate($ctx->option('value'), ...).
+                'emits' => 'expression:value',
                 'description' => 'Workflow-scoped value used by other nodes.', 'icon' => '𝓍',
                 'configSchema' => [
                     ['type' => 'text', 'key' => 'name', 'label' => 'Name', 'required' => true],
@@ -545,6 +577,8 @@ final class Builtin
             // ───────────── Human ─────────────
             [
                 'name' => 'human_approval', 'category' => 'human', 'label' => 'Human Approval',
+                // Read from HumanApprovalExecutor.php -- Port::branch(..., $ctx->input('in', ...)).
+                'emits' => 'input',
                 'description' => 'Pause until a human approves or denies.', 'icon' => '✓',
                 'pausesForHuman' => 'approval',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'approved', 'label' => 'approved'], ['id' => 'denied', 'label' => 'denied']],
@@ -580,6 +614,8 @@ final class Builtin
             // ───────────── Output ─────────────
             [
                 'name' => 'output', 'category' => 'output', 'sideEffects' => 'none', 'label' => 'Output',
+                // Read from OutputExecutor.php -- returns $ctx->input('in', $ctx->inputs).
+                'emits' => 'input',
                 'description' => "Terminal node — captures the workflow's result.", 'icon' => '●',
                 'inputs' => [['id' => 'in']], 'outputs' => [],
             ],

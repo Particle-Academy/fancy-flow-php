@@ -82,7 +82,88 @@ final class NodeKind
          * @var list<array{path:string,type?:string,description?:string}>|\Closure|null
          */
         public readonly array|\Closure|null $outputShape = null,
+        /**
+         * How this kind's output RELATES to its input, when the relation is what
+         * is knowable rather than a field list.
+         *
+         * `outputShape` answers *which fields*; this answers *where they come
+         * from*. Kept separate because they are different questions and a
+         * single field carrying sometimes-a-list-sometimes-a-keyword is one a
+         * reader handles only in the form it met first.
+         *
+         * Values, and every one is TOP-LEVEL by construction:
+         *   `'input'`             emits its input unchanged
+         *   `'inputs-merged'`     emits the union of every input's fields
+         *   `'expression:<key>'`  emits the shape the expression in that config
+         *                         key names -- the KEY is part of the value,
+         *                         because a consumer that hardcodes "the field
+         *                         called expression" has copied our knowledge
+         *                         one level down, which is the thing this
+         *                         removes
+         *
+         * A `\Closure` of config returns one of those, for a kind whose
+         * relation depends on how it was configured -- `transform` passes its
+         * input through when no expression is set, and `merge` concatenates
+         * rather than merging in `concat` mode.
+         *
+         * **A relation with no destination can only express a TOP-LEVEL merge.**
+         * `wait` returns `['waited' => …, 'duration' => …, 'input' => …]` -- it
+         * NESTS its input under a key rather than merging it, so it is a static
+         * `outputShape` with an opaque `input` field and NOT `emits: 'input'`.
+         * Declaring the relation there would make a reader accept
+         * `{{ in.<any inbound field> }}` at top level, which resolves to nothing
+         * at run time. Read the executor and ask *merge or nest* before
+         * assigning a relation; under-claiming is free.
+         *
+         * Raised, and this whole shape corrected, by the reference consumer --
+         * who had been reimplementing these semantics by reading our executors,
+         * with nothing to fail when they changed.
+         *
+         * @var 'input'|'inputs-merged'|string|\Closure|null
+         */
+        public readonly string|\Closure|null $emits = null,
     ) {}
+
+    /**
+     * The relation for a given config, or `null` when none was declared.
+     *
+     * @param  array<string,mixed> $config
+     * @return 'input'|'inputs-merged'|string|null
+     */
+    public function emitsFor(array $config): ?string
+    {
+        if ($this->emits === null) {
+            return null;
+        }
+        if ($this->emits instanceof \Closure) {
+            return ($this->emits)($config);
+        }
+
+        return $this->emits;
+    }
+
+    /**
+     * The config key an `expression:` relation names, or null.
+     *
+     * `transform` reads `config.expression`; `variable` reads `config.value`. A
+     * consumer must not assume either.
+     *
+     * NOTE the limit, which is not obvious and over-permits when missed: an
+     * expression's shape is knowable only when the whole string is a SINGLE
+     * reference. Interpolating several produces a string with no addressable
+     * fields, and a reader that expands it anyway accepts references that
+     * resolve to nothing.
+     *
+     * @param  array<string,mixed> $config
+     */
+    public function expressionConfigKey(array $config): ?string
+    {
+        $relation = $this->emitsFor($config);
+
+        return $relation !== null && str_starts_with($relation, 'expression:')
+            ? substr($relation, strlen('expression:'))
+            : null;
+    }
 
     /**
      * The fields this kind emits for a given config, or `null` when nothing has
@@ -178,6 +259,7 @@ final class NodeKind
             // Storing the marker string instead would push the decision onto
             // every caller, and the caller that forgets reads it as a field
             // list -- the failure this whole field exists to prevent.
+            emits: $raw['emits'] ?? null,
             outputShape: ($raw['outputShape'] ?? null) === self::DYNAMIC_OUTPUT_SHAPE
                 ? static fn (array $config): ?array => null
                 : $raw['outputShape'] ?? null,
@@ -230,6 +312,9 @@ final class NodeKind
         }
         if ($this->pausesForHuman !== null) {
             $out['pausesForHuman'] = $this->pausesForHuman;
+        }
+        if ($this->emits !== null && ! $this->emits instanceof \Closure) {
+            $out['emits'] = $this->emits;
         }
         if ($this->outputShape !== null) {
             // A closure is written down as DYNAMIC rather than omitted: absent

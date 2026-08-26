@@ -8,6 +8,60 @@ upgrading.
 
 ---
 
+## 0.37.0 — 2026-08-26
+
+### Added
+
+- **`emits` — how a kind's output RELATES to its input.** The half a field list
+  cannot express, and the reason a consumer was reimplementing our executors'
+  semantics in a static analyser.
+
+  `outputShape` answers *which fields*; `emits` answers *where they come from*.
+  Separate fields because they are separate questions — one field carrying
+  sometimes-a-list-sometimes-a-keyword is one a reader handles only in the form
+  it met first.
+
+  | value | meaning |
+  |---|---|
+  | `'input'` | emits its input unchanged |
+  | `'inputs-merged'` | the union of every input's fields |
+  | `'expression:<key>'` | the shape the expression in THAT config key names |
+  | a `Closure` | the relation itself depends on config |
+
+  Read it through `emitsFor($config)`; `expressionConfigKey($config)` returns
+  the key an expression relation names.
+
+  **The key is part of the value on purpose.** `transform` reads
+  `config.expression`, `variable` reads `config.value`. A consumer hardcoding
+  "the field called expression" has copied our knowledge one level down, which
+  is the thing this removes.
+
+  Now declared: `branch`, `switch_case`, `output`, `human_approval`,
+  `manual_trigger` (`input`); `variable` (`expression:value`); `transform` and
+  `merge` (Closures — `transform` passes through when no expression is set,
+  `merge` has no relation in `concat` mode); `schedule_trigger`
+  (`inputs-merged`, composed with its own `cron`/`timezone` list).
+
+### Two traps this design walked into, both caught before shipping
+
+- **A relation with no destination can only express a TOP-LEVEL merge.** `wait`
+  returns `['waited' => …, 'duration' => …, 'input' => …]` — it **nests** its
+  input under a key. `emits: 'input'` there would make a reader accept
+  `{{ in.<any inbound field> }}` at top level, which resolves to nothing at run
+  time. `wait` therefore keeps a static list with an opaque `input` field and no
+  relation. **Read the executor and ask *merge or nest* before assigning one.**
+
+- **`merge` in `concat` mode declares `null`, not `[]`.** It builds a list whose
+  elements are not addressable as top-level fields. `[]` would claim "emits no
+  fields" — false, and it would refuse every reference. Under-claiming is free.
+
+  `schedule_trigger` moved OUT of the deliberately-undeclared set for the
+  opposite reason: a partial `['cron','timezone']` list was unsafe only while
+  nothing could say the inputs also merge. With the relation declared beside it
+  the two are complete together.
+
+  The design, and both corrections, came from the reference consumer.
+
 ## 0.36.0 — 2026-08-26
 
 ### Fixed

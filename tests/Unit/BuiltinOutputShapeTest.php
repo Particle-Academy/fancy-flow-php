@@ -103,7 +103,13 @@ it('leaves pass-through kinds UNDECLARED rather than guessing', function () {
     foreach ([
         'branch', 'switch_case', 'output', 'transform', 'merge',
         'manual_trigger', 'webhook_trigger', 'human_approval',
-        'variable', 'schedule_trigger',
+        'variable',
+        // schedule_trigger LEFT this list when `emits` arrived. It was here
+        // because a partial list of ['cron','timezone'] would have made a
+        // reader refuse every merged-in key -- but that was only true while
+        // nothing could SAY the inputs merge. With `emits: 'inputs-merged'`
+        // declared beside the list, the two together are complete, so the list
+        // is now safe and useful rather than a false-rejection generator.
     ] as $name) {
         expect(kind($name)->outputShapeFor([]))
             ->toBeNull("`{$name}` passes input through; declaring a shape would cause false refusals");
@@ -123,4 +129,72 @@ it('a declared shape never contains an empty path', function () {
             expect($f['path'] ?? '')->not->toBe('', "`{$k->name}` declared a field with no path");
         }
     }
+});
+
+it('declares the RELATION for kinds whose shape depends on their input', function () {
+    // The half a field list cannot express. Each was read from its executor and
+    // checked for MERGE vs NEST before being assigned -- a relation with no
+    // destination can only describe a top-level merge.
+    $cases = [
+        'branch' => 'input',
+        'switch_case' => 'input',
+        'output' => 'input',
+        'human_approval' => 'input',
+        'manual_trigger' => 'input',
+        'variable' => 'expression:value',
+    ];
+
+    foreach ($cases as $name => $expected) {
+        expect(kind($name)->emitsFor([]))->toBe($expected, "`{$name}` relation");
+    }
+});
+
+it('transform changes relation with its config', function () {
+    // TWO returns: the input unchanged when no expression is set, else the
+    // expression's shape. So the RELATION itself is config-dependent.
+    $transform = kind('transform');
+
+    expect($transform->emitsFor([]))->toBe('input');
+    expect($transform->emitsFor(['expression' => '']))->toBe('input');
+    expect($transform->emitsFor(['expression' => '{{ in.user }}']))->toBe('expression:expression');
+});
+
+it('an expression relation names its OWN config key', function () {
+    // `transform` reads config.expression; `variable` reads config.value. A
+    // consumer that hardcodes "the field called expression" has copied our
+    // knowledge one level down -- the thing this removes.
+    expect(kind('variable')->expressionConfigKey([]))->toBe('value');
+    expect(kind('transform')->expressionConfigKey(['expression' => '{{ in.x }}']))->toBe('expression');
+    expect(kind('branch')->expressionConfigKey([]))->toBeNull();
+});
+
+it('merge concatenating declares NOTHING rather than an empty list', function () {
+    // mode 'merge' unions its inputs at the top level; 'concat' builds a LIST,
+    // whose elements are not addressable as fields. `[]` would claim "emits no
+    // fields", which is false and would refuse every reference -- so null.
+    $merge = kind('merge');
+
+    expect($merge->emitsFor([]))->toBe('inputs-merged');
+    expect($merge->emitsFor(['mode' => 'merge']))->toBe('inputs-merged');
+    expect($merge->emitsFor(['mode' => 'concat']))->toBeNull();
+    expect($merge->outputShapeFor([]))->toBeNull();
+});
+
+it('wait declares a LIST, never a relation, because it NESTS', function () {
+    // WaitExecutor returns ['waited'=>…, 'duration'=>…, 'input'=>…] -- the
+    // input goes UNDER a key. `emits: 'input'` would make a reader accept
+    // {{ in.<any inbound field> }} at top level, which resolves to nothing at
+    // run time. This is the case that proved a relation needs a destination.
+    expect(kind('wait')->emitsFor([]))->toBeNull();
+    expect(array_column(kind('wait')->outputShapeFor([]), 'path'))
+        ->toBe(['waited', 'duration', 'input']);
+});
+
+it('schedule_trigger composes a list WITH a merge, because its merge is top-level', function () {
+    // The composition case, and it is correct here where it was wrong for
+    // `wait`: ScheduleTriggerExecutor array_merges into the TOP level.
+    $sched = kind('schedule_trigger');
+
+    expect($sched->emitsFor([]))->toBe('inputs-merged');
+    expect(array_column($sched->outputShapeFor([]), 'path'))->toBe(['cron', 'timezone']);
 });
