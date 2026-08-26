@@ -8,6 +8,109 @@ upgrading.
 
 ---
 
+## 0.42.0 — 2026-08-26
+
+### Fixed
+
+- **The `agent` node's tool loop could never engage with anything we ship.**
+  `AgentExecutor` reads `$response['tool_calls']`, invokes each tool and calls
+  the model again — but that key was **absent from the `LlmClient` contract**,
+  and the only shipped implementation (`EchoLlmClient`) never returned it.
+
+  So an adapter written to the contract emitted no tool calls, the loop returned
+  after one step, and the `agent` node degraded to a single completion — which
+  looks exactly like a model that chose not to use a tool. The degraded
+  behaviour is indistinguishable from a legitimate outcome, which is why it
+  stayed invisible.
+
+  **Do you have to do anything?** Only if you wrote your own `LlmClient`. It now
+  MAY return `tool_calls`, and if your provider supports them it should — each
+  entry `{name, arguments, id?}`. Cap the provider at ONE step when you do:
+  **this executor owns the loop**, and letting the provider run its own as well
+  invokes every tool twice and hides half the trace from your audit. Existing
+  clients that return none keep working exactly as before.
+
+  **The loop now has tests — its first.** No test here could have caught this,
+  because every fake in the package was built from the contract that omitted the
+  key: a suite cannot catch a contract gap using only fakes written to that
+  contract.
+
+  Reported by the Prism harness while reviewing v0.41.0 for integration.
+
+### Changed
+
+- **`particle-academy/prism` was pinned to `0.111` EXACTLY** — no range at all,
+  so it could not take a patch, let alone three minors of fixes. Now
+  `>=0.114 <1.0`.
+
+  What arrives with it: the **Perplexity Agent API** move (the provider posts to
+  `/v1/agent`; Sonar's `/chat/completions` retires 2026-09-27), a Thread contract
+  letting stored conversations supply history, real cost reported into
+  `Meta::$cost`, and a fix for a prompt of exactly `"0"` being silently dropped.
+
+  Nothing for you to do — widening only ADDS candidates, so whatever you have
+  installed still resolves. A caret would have been wrong here for the usual
+  reason: on a `0.x` it locks the MINOR, which is how the pin got three behind.
+
+## 0.41.0 — 2026-08-26
+
+### Added
+
+- **`emits: 'input-map-merged'` — merging the input MAP is not merging the
+  payloads**, and one keyword was covering both.
+
+  `manual_trigger` and `schedule_trigger` merge the raw input map; `merge` unions
+  each port's PAYLOAD. Those coincide only at an entry point, because
+  `collectInputs` seeds an entry node FLAT and keys every other node by handle —
+  so `$ctx->inputs` is the payload at an entry point and a port-keyed map
+  everywhere else.
+
+  Give a `schedule_trigger` an inbound edge (a subflow where the trigger is also
+  a target) and it emits `{cron, timezone, in: {…}}`. The single keyword
+  over-permitted `{{ in.<upstream field> }}` when the real path is
+  `{{ in.in.<field> }}`.
+
+  **Do you have to do anything?** No. This is a DECLARATION about existing
+  behaviour — no node changed what it emits. It matters if you read `emits` to
+  decide whether a reference resolves: two names because they are two
+  operations, rather than one name plus a positional rule the reader has to know.
+
+  Named by the reference consumer, who found the boundary by reading
+  `$ctx->inputs` in both shapes rather than by reading the relation description.
+
+## 0.40.0 — 2026-08-26
+
+### Fixed
+
+- **A port bound to NULL was treated as an ABSENT port.** `ExecutionContext::input()`
+  read `$this->inputs[$port] ?? $default`, so a port holding an explicit `null`
+  returned the DEFAULT instead of `null`.
+
+  Eleven executors call `input('in', $ctx->inputs)` — whose default is *the whole
+  inputs map*. So a null `in` did not yield null, it yielded **every input the
+  node had**. That is worse than the wrapper leak fixed in 0.39.0, and for a
+  specific reason: the wrapper was visibly odd, while an inputs map is
+  PLAUSIBLE. It looks exactly like real data, so a downstream node reads fields
+  from the wrong place and nothing looks wrong anywhere.
+
+  The fallback itself is right and stays: a trigger has no `in` edge, and "the
+  `in` port, or everything if there is no `in` port" is what lets an entry node
+  read its seeded payload. Only the ABSENT case may fall back now —
+  `array_key_exists`, which is the only correct test.
+
+  **Do you have to do anything?** Only if a node of yours was relying on a null
+  input silently becoming the full inputs map — which was never intended and is
+  hard to depend on deliberately. A node that emits null now delivers null.
+
+  Third layer of one collapse: `input()`, `activatedPorts`, and the regression
+  test written for `activatedPorts` — which asserted with `?? '__absent__'` and
+  so could not see the null it was testing for. **The rule: `??` (and `is None`,
+  and `unwrap_or`) is safe only where null is not a legal value.** Fixed in all
+  four runtimes.
+
+  Found by the consumer asking whether the CAUSE had been fixed or only the
+  symptom.
+
 ## 0.39.0 — 2026-08-26
 
 ### Fixed
