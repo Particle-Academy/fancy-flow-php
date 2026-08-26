@@ -240,6 +240,21 @@ final class Builtin
             ],
             [
                 'name' => 'user_input', 'category' => 'human', 'label' => 'User Input',
+                // Emits exactly the field keys its author defined -- no static list can
+                // know them. UserInputExecutor returns $ctx->inputs['values'], which the
+                // host fills from these declared fields.
+                'outputShape' => static function (array $config): array {
+                    $fields = $config['fields'] ?? [];
+
+                    return array_values(array_map(
+                        static fn (array $f): array => [
+                            'path' => (string) ($f['key'] ?? ''),
+                            'type' => 'unknown',
+                            'description' => (string) ($f['label'] ?? ''),
+                        ],
+                        is_array($fields) ? $fields : [],
+                    ));
+                },
                 'description' => 'Pause the flow until the user submits the configured form.', 'icon' => '✎',
                 'pausesForHuman' => 'input',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'out', 'label' => 'values']],
@@ -273,6 +288,11 @@ final class Builtin
             ],
             [
                 'name' => 'for_each', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'For Each',
+                // Read from ForEachExecutor.php:25.
+                'outputShape' => [
+                    ['path' => 'items', 'type' => 'array', 'description' => 'The list that was iterated.'],
+                    ['path' => 'count', 'type' => 'number', 'description' => 'How many items it held.'],
+                ],
                 'description' => 'Iterate over a list, emitting each item on `item`.', 'icon' => '↻',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'item', 'label' => 'item'], ['id' => 'done', 'label' => 'done']],
                 'configSchema' => [
@@ -319,6 +339,12 @@ final class Builtin
             ],
             [
                 'name' => 'wait', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Wait',
+                // Read from WaitExecutor.php:25-29.
+                'outputShape' => [
+                    ['path' => 'waited', 'type' => 'string', 'description' => 'Which wait mode ran.'],
+                    ['path' => 'duration', 'type' => 'number', 'description' => 'How long it waited.'],
+                    ['path' => 'input', 'type' => 'unknown', 'description' => 'The value that arrived, carried forward.'],
+                ],
                 'description' => 'Sleep or wait for an external event.', 'icon' => '⏸',
                 'configSchema' => [
                     ['type' => 'select', 'key' => 'mode', 'label' => 'Mode', 'default' => 'duration',
@@ -375,6 +401,27 @@ final class Builtin
             // ───────────── AI ─────────────
             [
                 'name' => 'llm_call', 'category' => 'ai', 'label' => 'LLM Call',
+                // Config-dependent: `data` exists only when the author asked for a
+                // schema (LlmCallExecutor.php:89). The rest is the client contract at
+                // Nodes/Support/LlmClient.php:28 -- array{text:string,data?,usage?,raw?}.
+                //
+                // A Closure cannot be serialised, so a manifest-restored registry gets
+                // `null` here rather than a list. That is the honest answer and it is a
+                // real loss on the most-referenced kind there is; see the CHANGELOG.
+                'outputShape' => static function (array $config): array {
+                    $asked = ($config['response_schema'] ?? null) !== null
+                        && $config['response_schema'] !== ''
+                        && $config['response_schema'] !== [];
+
+                    return array_values(array_filter([
+                        ['path' => 'text', 'type' => 'string', 'description' => "The model's completion."],
+                        $asked
+                            ? ['path' => 'data', 'type' => 'unknown', 'description' => 'The parsed, schema-checked result.']
+                            : null,
+                        ['path' => 'usage', 'type' => 'object', 'description' => 'Token counts, when the provider reports them.'],
+                        ['path' => 'raw', 'type' => 'unknown', 'description' => "The provider's untouched response."],
+                    ]));
+                },
                 'description' => 'Send a prompt + context to a model and receive a response.', 'icon' => '✦',
                 'configSchema' => [
                     ['type' => 'select', 'key' => 'provider', 'label' => 'Provider', 'default' => 'anthropic',
@@ -394,6 +441,12 @@ final class Builtin
             ],
             [
                 'name' => 'llm_router', 'category' => 'ai', 'label' => 'LLM Router',
+                // Read from LlmRouterExecutor.php:169.
+                'outputShape' => [
+                    ['path' => 'route', 'type' => 'string', 'description' => 'The port the model chose.'],
+                    ['path' => 'reason', 'type' => 'string', 'description' => 'Why the model chose it.'],
+                    ['path' => 'input', 'type' => 'unknown', 'description' => 'The value that arrived, carried forward.'],
+                ],
                 // Renamed from `llm_branch`: the node picks one of N NAMED
                 // ROUTES, it is not a two-way branch, and the id now matches the
                 // label and the `routes[]` config. Every previously-shipped id
@@ -440,6 +493,11 @@ final class Builtin
             ],
             [
                 'name' => 'embed_search', 'category' => 'ai', 'sideEffects' => 'none', 'label' => 'Embed & Search',
+                // Read from EmbedSearchExecutor.php:26-29.
+                'outputShape' => [
+                    ['path' => 'query', 'type' => 'string', 'description' => 'The query that was embedded.'],
+                    ['path' => 'matches', 'type' => 'array', 'description' => 'Vector-store hits for the query.'],
+                ],
                 'description' => 'Embed a query and search a vector store.', 'icon' => '✺',
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'query', 'label' => 'Query', 'required' => true, 'example' => '{{ $json.question }}'],
@@ -462,6 +520,12 @@ final class Builtin
             ],
             [
                 'name' => 'webhook_out', 'category' => 'io', 'sideEffects' => 'unsafe-to-replay', 'label' => 'Send Webhook',
+                // Read from WebhookOutExecutor.php:31.
+                'outputShape' => [
+                    ['path' => 'sent', 'type' => 'boolean', 'description' => 'True once the request was made.'],
+                    ['path' => 'status', 'type' => 'number', 'description' => 'HTTP status, when the transport reported one.'],
+                    ['path' => 'response', 'type' => 'unknown', 'description' => 'The response body, when there was one.'],
+                ],
                 'description' => 'POST a payload to a configured URL.', 'icon' => '↗',
                 'configSchema' => [
                     ['type' => 'text', 'key' => 'url', 'label' => 'URL', 'required' => true],
@@ -486,6 +550,13 @@ final class Builtin
             ],
             [
                 'name' => 'notify', 'category' => 'human', 'sideEffects' => 'unsafe-to-replay', 'label' => 'Notify',
+                // Read from NotifyExecutor.php:30.
+                'outputShape' => [
+                    ['path' => 'sent', 'type' => 'boolean', 'description' => 'True once the message was handed to the channel.'],
+                    ['path' => 'channel', 'type' => 'string', 'description' => 'The channel it went to.'],
+                    ['path' => 'to', 'type' => 'string', 'description' => 'The recipient.'],
+                    ['path' => 'message', 'type' => 'string', 'description' => 'The rendered message.'],
+                ],
                 'description' => 'Send a message via Slack / email / SMS / etc.', 'icon' => '🔔',
                 'configSchema' => [
                     ['type' => 'select', 'key' => 'channel', 'label' => 'Channel', 'default' => 'slack',
@@ -506,6 +577,11 @@ final class Builtin
             ],
             [
                 'name' => 'log', 'category' => 'output', 'sideEffects' => 'none', 'label' => 'Log',
+                // Read from LogExecutor.php:25.
+                'outputShape' => [
+                    ['path' => 'logged', 'type' => 'string', 'description' => 'The message that was written.'],
+                    ['path' => 'level', 'type' => 'string', 'description' => 'The level it was written at.'],
+                ],
                 'description' => 'Send to the run feed.', 'icon' => '≡',
                 'inputs' => [['id' => 'in']], 'outputs' => [],
                 'configSchema' => [
@@ -560,6 +636,11 @@ final class Builtin
     {
         return self::canonicalize([
             'name' => 'agent', 'category' => 'ai', 'label' => 'Agent', 'icon' => '✦',
+                // Read from AgentExecutor.php:52.
+                'outputShape' => [
+                    ['path' => 'text', 'type' => 'string', 'description' => 'The agent\'s final answer.'],
+                    ['path' => 'steps', 'type' => 'array', 'description' => 'Each prompt/response round it took.'],
+                ],
             'description' => 'LLM agent with tools + multi-step reasoning.',
             'configSchema' => [
                 ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'required' => true, 'placeholder' => 'claude-sonnet-4-5'],

@@ -8,6 +8,61 @@ upgrading.
 
 ---
 
+## 0.34.0 — 2026-08-26
+
+### Added
+
+- **Ten builtin kinds now declare what they emit.** Eight static —
+  `embed_search`, `llm_router`, `notify`, `webhook_out`, `for_each`, `wait`,
+  `log`, `agent` — plus two config-dependent Closures, `llm_call` and
+  `user_input`.
+
+  Every declaration was read from its EXECUTOR's return statement, with the file
+  and line cited beside it. **None was copied from the TypeScript twin or from
+  any other declaration**: the two errors found in a consumer's hand-maintained
+  table were both rows that agreed with a second artefact, so "two declarations
+  agree" is not evidence of either being right.
+
+  `llm_call` gains `data` **only when the author set a `response_schema`**
+  (`LlmCallExecutor.php:89`); the rest is the client contract at
+  `Nodes/Support/LlmClient.php:28`. `user_input` emits the keys its author
+  defined. Both are therefore Closures, and both report
+  `hasDynamicOutputShape()`.
+
+### Known limitation — read this if you build a registry from a manifest
+
+- **`llm_call` and `user_input` lose shape checking through a JSON manifest.** A
+  Closure cannot be serialised; `toArray()` writes `"dynamic"` and a restored
+  registry answers `null` — correctly meaning *"a shape exists and this process
+  cannot resolve it"*, distinguishable via `hasDynamicOutputShape()`.
+
+  Saying it plainly because "the builtins now declare their shapes" would
+  otherwise read as *checking works everywhere*, and for manifest-backed
+  consumers it is the opposite on the most-referenced kind there is. A
+  code-registered registry keeps full precision.
+
+  A serialisable conservative floor was considered and rejected: derived from a
+  kind's `defaultConfig` it is only sound if that config's output is a subset of
+  every other config's, which nothing enforces — a "floor" that is not a floor
+  makes a validator refuse a valid reference, which is worse than declining to
+  answer. Raised by the reference consumer.
+
+### Deliberately still undeclared
+
+- `branch`, `switch_case`, `output`, `transform`, `merge`, `manual_trigger`,
+  `webhook_trigger`, `human_approval`, `variable` and `schedule_trigger` remain
+  `null`, and that is the honest answer: they emit what arrived, so their shape
+  is not knowable from the kind alone.
+
+  `schedule_trigger` is the sharp case — it `array_merge`s its inputs into the
+  TOP level (`ScheduleTriggerExecutor.php:23-28`), so a partial static list of
+  `['cron','timezone']` would make a validator **refuse every merged-in key**. A
+  partial static list on a merging kind is a false-rejection generator, and a
+  false rejection is one an author cannot comply with.
+
+  Declaring the RELATION these kinds have to their input — rather than a field
+  list — is the next piece of work.
+
 ## 0.33.0 — 2026-08-26
 
 ### Added
