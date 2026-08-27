@@ -8,6 +8,44 @@ upgrading.
 
 ---
 
+## 0.46.0 — 2026-08-26
+
+### Fixed
+
+- **The authoring API and the engine disagreed about which ports a node has, so
+  an agent that did exactly what it was told was marked wrong.**
+
+  Three kinds decide their ports from their own config: `switch_case` publishes
+  one port per entry in its `cases` map, `llm_router` one per declared route,
+  and `subflow` gains `stream` in the streaming modes. Their `NodeKind` can only
+  carry a representative default.
+
+  That answer was computed in **two places that did not agree**.
+  `fancy-flow-mcp`'s `PortResolver` derived it from config — so
+  `describe_node_kind` correctly told an authoring agent that a third case
+  existed once three were configured — while the ENGINE read only the kind's
+  static declaration, and 0.44.0's undelivered-edge warning therefore reported
+  that same port as impossible.
+
+  The pairing is the worst available: **the authoring API invited the edge and
+  the runtime then called it a mistake.**
+
+  There is now one rule, `Registry\PortResolution`, in the engine. It is public,
+  so `fancy-flow-mcp` calls it instead of keeping a second copy — two copies of
+  one rule agree right up until someone edits one of them, and nothing anywhere
+  reports the divergence.
+
+  **Do you have to do anything?** No. If you were seeing spurious
+  undelivered-edge warnings on a configured `switch_case`, `llm_router` or a
+  streaming `subflow`, they stop. The warning still fires for a handle no
+  configuration could produce — a `case_z` that is in neither the cases map nor
+  the declaration is still a mistake, and there is a test pinning that the fix
+  did not widen into uselessness.
+
+  Found by **flabs**: an agent configured a third case through the MCP, which
+  offered it, and the engine failed the graph its own authoring tools had led
+  the agent to build.
+
 ## 0.45.0 — 2026-08-26
 
 ### Fixed

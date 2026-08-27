@@ -10,6 +10,7 @@ use FancyFlow\Exceptions\NodeExecutionException;
 use FancyFlow\Exceptions\RunAborted;
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Registry\KindId;
+use FancyFlow\Registry\PortResolution;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\NodeStatus;
 use FancyFlow\Runtime\RunEvent;
@@ -642,9 +643,12 @@ final class FlowRunner
      * would warn on every branching graph. **A warning that fires on ordinary
      * branching is noise, and noise is how a real warning stops being read.**
      *
-     * Resolved the same way `activatedPorts` resolves them, deliberately: node
-     * `outputs` first, then the kind's, then `out`. Two copies of that
-     * precedence would agree until someone changed one.
+     * Delegated to {@see PortResolution} so the ENGINE and the AUTHORING API
+     * cannot disagree. They did: `fancy-flow-mcp` derived a `switch_case`'s
+     * ports from its `cases` config and correctly offered a third case, while
+     * this method read only the kind's static declaration and reported that same
+     * port as impossible. The authoring API invited an edge and the runtime
+     * called it a mistake.
      *
      * @return list<string>
      */
@@ -654,34 +658,10 @@ final class FlowRunner
             return ['out'];
         }
 
-        $declared = $node->outputs;
+        $kindName = $node->kind();
+        $kind = ($kindName !== null && $kinds !== null) ? $kinds->get($kindName) : null;
 
-        if ($declared === null) {
-            $kindName = $node->kind();
-
-            // An UNREGISTERED kind is not ambiguous, which is worth stating
-            // because it looks as though it should be. `activatedPorts` falls
-            // back to exactly `['out']` for a kind it cannot resolve -- so an
-            // unknown kind deterministically publishes `out` and nothing else,
-            // and naming any other handle on it really is impossible.
-            //
-            // An earlier attempt at this treated "kind not found" as "ports
-            // unknown" and went silent. That was a mis-diagnosis of a false
-            // positive whose real cause was one layer up: the Laravel provider
-            // was not giving `ExecutorRegistry` the host's registry, so KNOWN
-            // kinds were arriving here as unknown. Fixing the lookup fixed the
-            // warning; weakening the warning only hid it.
-            $kindPorts = ($kindName !== null && $kinds !== null) ? $kinds->get($kindName)?->outputs : null;
-            if ($kindPorts !== null && $kindPorts !== []) {
-                $declared = $kindPorts;
-            }
-        }
-
-        if ($declared === null) {
-            return ['out'];
-        }
-
-        return array_values(array_map(static fn (PortDescriptor $p) => $p->id, $declared));
+        return PortResolution::possible($node, $kind, $node->config ?? []);
     }
 
     private function portKey(string $nodeId, ?string $portId): string
