@@ -168,22 +168,45 @@ it('does not extend the float exemption to an ordinary kind', function () {
 });
 
 it('lets a host kind whose category is `annotation` float', function () {
+    // PAIRED WITH ITS CONTROL, and the control is the point.
+    //
+    // Alone this assertion CANNOT FAIL: if the registration silently did
+    // nothing, `design_note` would be an UNKNOWN kind -- and unknown kinds
+    // float too. It would pass whether the category rule worked or not.
+    //
+    // So a second host kind is registered with an ordinary category. Only if
+    // THAT one is refused do we know registration took effect and it is the
+    // category doing the work.
     $registry = connRegistry();
     $registry->register(new NodeKind(name: 'design_note', category: 'annotation', label: 'Design Note'));
+    $registry->register(new NodeKind(name: 'design_step', category: 'data', label: 'Design Step'));
 
-    $result = Workflow::import(connSchema(
+    $floats = Workflow::import(connSchema(
         [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('d', 'design_note')],
         [['id' => 'e1', 'source' => 't', 'target' => 'o']],
     ), registry: $registry);
 
-    expect($result->errors())->toBe([]);
+    expect($floats->errors())->toBe([]);
+
+    $refused = Workflow::import(connSchema(
+        [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('s', 'design_step')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'o']],
+    ), registry: $registry);
+
+    expect(implode("\n", array_map(fn ($i) => $i->message, $refused->errors())))
+        ->toContain('connected to nothing');
 });
 
 it('lets a `layout` kind float, which is what a swimlane is', function () {
     // The TS runtime ships `@particle-academy/lane` and its engine walks past
     // it. A lane is never wired to anything -- that is what a lane IS.
+    //
+    // Same control as above: a `layout` kind and an ordinary one registered
+    // together, so the pass means "the category exempted it" rather than
+    // "registration quietly failed and unknown kinds float".
     $registry = connRegistry();
     $registry->register(new NodeKind(name: 'lane', category: 'layout', label: 'Lane'));
+    $registry->register(new NodeKind(name: 'not_a_lane', category: 'data', label: 'Not A Lane'));
 
     $result = Workflow::import(connSchema(
         [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('l', 'lane')],
@@ -191,6 +214,13 @@ it('lets a `layout` kind float, which is what a swimlane is', function () {
     ), registry: $registry);
 
     expect($result->errors())->toBe([]);
+
+    $control = Workflow::import(connSchema(
+        [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('n', 'not_a_lane')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'o']],
+    ), registry: $registry);
+
+    expect($control->errors())->toHaveCount(1);
 });
 
 it('does not ALSO call an unknown kind floating, on top of its own error', function () {
