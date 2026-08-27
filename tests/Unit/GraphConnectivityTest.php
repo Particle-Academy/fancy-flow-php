@@ -5,6 +5,7 @@ declare(strict_types=1);
 use FancyFlow\Analysis\GraphConnectivity;
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Registry\Builtin;
+use FancyFlow\Registry\NodeKind;
 use FancyFlow\Schema\FlowEdge;
 use FancyFlow\Schema\FlowNode;
 use FancyFlow\Schema\PortDescriptor;
@@ -156,17 +157,63 @@ it('lets a note float under its canonical namespaced id too', function () {
     expect(connErrors($schema))->toBe([]);
 });
 
-it('does not extend the float exemption to any other kind', function () {
+it('does not extend the float exemption to an ordinary kind', function () {
+    // `transform` is a step. Being config-light does not make it an annotation.
     $schema = connSchema(
-        [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('c', 'comment_ish')],
+        [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('x', 'transform')],
         [['id' => 'e1', 'source' => 't', 'target' => 'o']],
     );
 
-    // `comment_ish` is not a kind at all, so this also proves the unknown-kind
-    // error and the float error do not shadow one another.
+    expect(implode("\n", connErrors($schema)))->toContain('connected to nothing');
+});
+
+it('lets a host kind whose category is `annotation` float', function () {
+    $registry = connRegistry();
+    $registry->register(new NodeKind(name: 'design_note', category: 'annotation', label: 'Design Note'));
+
+    $result = Workflow::import(connSchema(
+        [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('d', 'design_note')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'o']],
+    ), registry: $registry);
+
+    expect($result->errors())->toBe([]);
+});
+
+it('lets a `layout` kind float, which is what a swimlane is', function () {
+    // The TS runtime ships `@particle-academy/lane` and its engine walks past
+    // it. A lane is never wired to anything -- that is what a lane IS.
+    $registry = connRegistry();
+    $registry->register(new NodeKind(name: 'lane', category: 'layout', label: 'Lane'));
+
+    $result = Workflow::import(connSchema(
+        [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('l', 'lane')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'o']],
+    ), registry: $registry);
+
+    expect($result->errors())->toBe([]);
+});
+
+it('does not ALSO call an unknown kind floating, on top of its own error', function () {
+    // Found by porting this rule to the TS runtime, not by reading the code.
+    //
+    // A graph authored in the TS editor with swimlanes carries `lane` nodes
+    // that PHP's registry does not have. Before this, every one of them
+    // produced a "connected to nothing" error UNDERNEATH the unknown-kind one
+    // -- a second, misleading message about a node whose real problem is that
+    // this runtime has never heard of it.
+    //
+    // We cannot know whether an unknown kind is a step, an annotation or a
+    // lane, so claiming it must be wired asserts something unverifiable. The
+    // unknown-kind issue already fires and is the accurate one.
+    $schema = connSchema(
+        [connNode('t', 'manual_trigger'), connNode('o', 'output'), connNode('c', 'no_such_kind')],
+        [['id' => 'e1', 'source' => 't', 'target' => 'o']],
+    );
+
     $errors = connErrors($schema);
 
-    expect(implode("\n", $errors))->toContain('connected to nothing');
+    expect(implode("\n", $errors))->toContain('Unknown kind');
+    expect(implode("\n", $errors))->not->toContain('connected to nothing');
 });
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,34 @@ upgrading.
 
 ---
 
+## 0.48.1 — 2026-08-26
+
+### Fixed
+
+- **0.48.0 called a swimlane a floating node.** The float rule exempted `note`
+  and nothing else, so any node that legitimately never gets wired was refused:
+
+  - a **host kind whose category is `annotation`** — someone else's note;
+  - a **`layout` kind**, which is what a swimlane is. The TS runtime ships
+    `@particle-academy/lane` and its engine walks straight past it;
+  - **a kind this registry has never heard of.**
+
+  The last one is the one that bit. PHP's registry has no `lane`, so a graph
+  authored in the TS editor with swimlanes arrives here as unknown kinds — and
+  every lane in it collected a "connected to nothing" error UNDERNEATH the
+  unknown-kind error it already had. A second, misleading message about a node
+  whose actual problem is that this runtime does not know the kind.
+
+  An unknown kind might be a step, an annotation or a lane. Claiming it must be
+  wired asserts something that cannot be checked, so it no longer does; the
+  unknown-kind issue still fires and is the accurate one.
+
+  Found by porting the rule to the TS runtime, which is where the `layout`
+  category and `@particle-academy/lane` are visible. Reading the PHP code alone
+  would not have surfaced it.
+
+---
+
 ## 0.48.0 — 2026-08-26
 
 ### Added

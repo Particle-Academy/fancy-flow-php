@@ -77,7 +77,7 @@ final class GraphConnectivity
         $single = count($nodes) === 1;
 
         foreach ($nodes as $node) {
-            if (self::mayFloat($node)) {
+            if (self::mayFloat($node, $registry)) {
                 continue;
             }
 
@@ -128,16 +128,47 @@ final class GraphConnectivity
     }
 
     /**
-     * Only an annotation may sit unconnected.
+     * Which nodes are allowed to sit unconnected.
      *
-     * Matched across every id the kind answers to — a graph saved with the
-     * canonical `@particle-academy/note` must stay an annotation rather than
-     * becoming an unwireable node, which is the same aliasing rule the engine
-     * and the executors already follow.
+     * Three answers, and the third one is the one that took a second pass:
+     *
+     * 1. **`note`** -- matched across every id the kind answers to, so a graph
+     *    saved with the canonical `@particle-academy/note` stays an annotation
+     *    rather than becoming an unwireable node. This mirrors the test
+     *    `FlowRunner` itself uses to skip it.
+     *
+     * 2. **Any kind whose category is `annotation` or `layout`.** A host may
+     *    register its own annotation, and the TS runtime additionally has
+     *    `@particle-academy/lane` (a swimlane, category `layout`) which its
+     *    engine walks straight past. Neither is a step, and neither is ever
+     *    wired.
+     *
+     * 3. **A kind this registry has never heard of.** Not a loophole -- the
+     *    honest answer. An unknown kind ALREADY produces its own issue, and we
+     *    cannot know whether it is a step, an annotation or a lane. Adding
+     *    "this must be wired" on top would be asserting something we cannot
+     *    check, and it would land on exactly the graphs that need it least: a
+     *    laned graph authored in the TS editor carries `lane` nodes that PHP's
+     *    registry does not have, so before this exemption every swimlane in it
+     *    became a second, misleading error underneath the real one.
      */
-    private static function mayFloat(FlowNode $node): bool
+    private static function mayFloat(FlowNode $node, NodeKindRegistry $registry): bool
     {
-        return $node->type !== null && KindId::matches($node->type, 'note');
+        if ($node->type === null || $node->type === '') {
+            return false;
+        }
+
+        if (KindId::matches($node->type, 'note')) {
+            return true;
+        }
+
+        $kind = $registry->get($node->type);
+
+        if ($kind === null) {
+            return true;
+        }
+
+        return $kind->category === 'annotation' || $kind->category === 'layout';
     }
 
     /**
