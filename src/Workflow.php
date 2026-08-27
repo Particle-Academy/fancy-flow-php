@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FancyFlow;
 
+use FancyFlow\Analysis\GraphConnectivity;
 use FancyFlow\Schema\FlowEdge;
 use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Schema\FlowNode;
@@ -210,6 +211,20 @@ final class Workflow
                 targetHandle: isset($raw['targetHandle']) ? (string) $raw['targetHandle'] : null,
                 label: isset($raw['label']) && is_string($raw['label']) ? $raw['label'] : null,
             );
+        }
+
+        // WIRING, not merely dataflow: a node that no edge reaches and that
+        // reaches no edge, and an edge that reads from a node publishing nothing.
+        //
+        // Deliberately AFTER the edge loop, so it sees the same edges the engine
+        // will -- a dangling edge is dropped with a warning above, and running
+        // this first would let a dropped edge count as a connection.
+        //
+        // Deliberately NOT gated on `$lenient`. That flag is about unknown
+        // VOCABULARY (a kind this host has not registered), never about wiring;
+        // a floating node floats in every registry.
+        foreach (GraphConnectivity::check($nodes, $edges, $registry) as $issue) {
+            $issues[] = $issue;
         }
 
         $ok = true;

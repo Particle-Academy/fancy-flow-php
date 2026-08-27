@@ -8,6 +8,66 @@ upgrading.
 
 ---
 
+## 0.48.0 — 2026-08-26
+
+### Added
+
+- **A graph containing a node that cannot take part in it is now an import
+  ERROR.** Two shapes, both of which previously imported clean and then quietly
+  did nothing. Both were measured against the engine before the check was
+  written — neither of them FAILS, which is precisely why they are worth
+  refusing:
+
+  - **A floating node** — no inbound edge and no outbound edge. It is not
+    skipped: a node with no incoming edge is a root, so the topo sort runs it.
+    A three-node graph with one stray `log` executed `t,lonely,o`. It runs
+    disconnected, receiving nothing from the graph and reaching nobody in it.
+  - **An edge whose SOURCE is a terminal node** (`output`, `log` — the kinds
+    declaring an empty output-port list). Measured: `t -> output -> log`
+    imported clean and the `log` ran, with `{{ input }}` resolving to `""`.
+    Nothing errored, nothing warned, and the downstream node operated on a hole.
+
+  `note` is the one kind allowed to float, matched across every id it answers
+  to (`note` and `@particle-academy/note`). That is less an exception than the
+  definition of it: an annotation is a comment on the canvas, the engine never
+  executes it, and requiring it to be wired would make it a node.
+
+  Errors rather than warnings because both are unambiguous. No data at run time
+  makes a floating node participate, and none makes an edge out of a terminator
+  deliver — which is the test for refusing at authoring time instead of warning.
+
+  New: `FancyFlow\Analysis\GraphConnectivity`, called from `Workflow::import()`
+  and therefore from `fancy-flow-mcp`'s `validate_workflow` and `run_workflow`.
+
+### What a consumer must do
+
+**Almost certainly nothing, and NO stored workflow stops running.** Every run
+path — `FancyFlowManager::toGraph()`, `EloquentWorkflowResolver`,
+`SubgraphExecutor` — takes `ImportResult->graph` and does not read `ok`. This
+refuses at AUTHORING time; it does not gate execution of a graph already saved.
+
+Where you WILL see it, and it is the point:
+
+- `php artisan flow:validate` and `flow:run` (both check `ok`) now fail a graph
+  they used to accept.
+- `fancy-flow-mcp`'s `run_workflow` refuses to run one, and `validate_workflow`
+  reports it. Mid-build drafts are unaffected — `validate` runs only when the
+  agent calls it, never after each `add_node`.
+
+If you have a saved graph with a stray node, delete it or wire it; if it was a
+comment, make it a `note`. The error names the node id (or the edge id, for a
+terminator edge) so an editor can highlight exactly the thing to fix, and every
+offending node is reported at once rather than one per round trip.
+
+### Not yet ported
+
+This lands in the PHP runtime only. `fancy-flow` (TS), `fancy-flow-py` and
+`fancy-flow-rs` still accept both shapes, so an editor on the TS runtime will
+let you draw an edge this validator then refuses. Saying so here rather than
+leaving the four runtimes silently disagreeing.
+
+---
+
 ## 0.47.0 — 2026-08-26
 
 ### Added
