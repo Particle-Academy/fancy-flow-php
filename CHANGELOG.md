@@ -8,6 +8,55 @@ upgrading.
 
 ---
 
+## 0.47.0 — 2026-08-26
+
+### Added
+
+- **A `branch` or `switch_case` that routed on a path resolving to NOTHING now
+  says so.** Previously it just went the wrong way.
+
+  `branch` resolves its `condition` and asks `Expr::truthy()`. An unresolvable
+  path yields `null`, `null` is falsy, and the run takes the **`false`** port —
+  silently, and for a reason that has nothing to do with the data.
+  `switch_case` does the same one step over: a `value` that does not resolve
+  becomes `''`, matches no case, and falls to `default`.
+
+  From the outside that is indistinguishable from a condition that was
+  legitimately false. It is the `''` collapse again, except it changes the
+  ROUTE rather than the text — which is worse, because an empty string is at
+  least visible in the output. Half the graph never runs and the run reports
+  success.
+
+  ```
+  Node triage took the "false" port because `condition` resolved to NOTHING —
+  the path in.urgent names no field on this node's inputs. That is not the same
+  as a false condition: the route was decided by an absent value rather than by
+  the data.
+  ```
+
+  **Routing is UNCHANGED and deliberately so.** An unresolved condition still
+  takes `false`; altering that would silently re-route graphs that have been
+  running for months. What was missing was the reason, and that is what this
+  adds. A host that would rather fail outright has `UnresolvedPolicy::Throw` on
+  `Expr::evaluate()`.
+
+  **It does not fire on an honest `false`.** Not for `false`, `0`, `''`,
+  `'false'`, `'0'`, `[]`, or a resolved `null` — the key existing is what
+  matters. Not for a condition that mixes text with an expression, which is
+  being used as a string. Not for the `{{a}}{{b}}` corner, which is a malformed
+  template rather than an absent field. Most branches ever run take `false`
+  honestly, and a warning on those is noise — which is how a real warning stops
+  being read.
+
+  **Do you have to do anything?** No. If a warning appears, a routing decision
+  in your graph is being made by an absent value, and it was already happening
+  silently.
+
+  Found by **flabs**: an agent built a correct triage graph whose urgency check
+  referenced a field that did not resolve, so a request reporting total payment
+  failure was routed as non-urgent. The graph was right, the path was wrong, and
+  nothing said so.
+
 ## 0.46.0 — 2026-08-26
 
 ### Fixed

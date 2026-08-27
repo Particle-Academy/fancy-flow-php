@@ -32,7 +32,7 @@ use FancyFlow\Schema\FlowNode;
 it('derives switch_case ports from the cases map, not the static declaration', function () {
     $kinds = NodeKindRegistry::default();
     $node = new FlowNode('s', 'switch_case', config: [
-        'value' => '{{ in.lane }}',
+        'value' => '{{ lane }}',
         'cases' => ['billing' => 'case_a', 'technical' => 'case_b', 'other' => 'case_c'],
     ]);
 
@@ -119,7 +119,7 @@ it('does NOT warn about an edge leaving a config-derived port', function () {
     $graph = new FlowGraph(
         [
             new FlowNode('s', 'switch_case', config: [
-                'value' => '{{ in.lane }}',
+                'value' => '{{ lane }}',
                 'cases' => ['billing' => 'case_a', 'other' => 'case_c'],
             ]),
             new FlowNode('a', 'sink'),
@@ -160,7 +160,7 @@ it('still warns about a port no configuration could produce', function () {
     $graph = new FlowGraph(
         [
             new FlowNode('s', 'switch_case', config: [
-                'value' => '{{ in.lane }}',
+                'value' => '{{ lane }}',
                 'cases' => ['billing' => 'case_a'],
             ]),
             new FlowNode('a', 'sink'),
