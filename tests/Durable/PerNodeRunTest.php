@@ -179,6 +179,41 @@ it('checkpoints each node as it finishes, not once when the graph returns', func
     expect($row->completed_at)->not->toBeNull();
 });
 
+it('records the exact resolved inputs delivered to each node', function () {
+    pnRecorder();
+
+    $run = FancyFlow::dispatch(
+        [
+            '$schema' => Workflow::SCHEMA_URL,
+            'version' => 1,
+            'graph' => [
+                'inputs' => [['name' => 'tenant', 'type' => 'string', 'required' => true]],
+                'nodes' => [pnNode('t', 'manual_trigger'), pnNode('a', 'rec')],
+                'edges' => [pnEdge('e1', 't', 'a')],
+            ],
+        ],
+        ['t' => ['payload' => ['id' => 42], 'explicit_null' => null]],
+        props: ['tenant' => 'acme'],
+    );
+
+    $trigger = $run->nodes()->where('node_id', 't')->firstOrFail();
+    $downstream = $run->nodes()->where('node_id', 'a')->firstOrFail();
+
+    $triggerInputs = [
+        'payload' => ['id' => 42],
+        'explicit_null' => null,
+        'tenant' => 'acme',
+        '$props' => ['tenant' => 'acme'],
+    ];
+
+    expect($trigger->inputs)->toBe($triggerInputs);
+    expect($downstream->inputs)->toBe([
+        'in' => $triggerInputs,
+        't' => $triggerInputs,
+        '$props' => ['tenant' => 'acme'],
+    ]);
+});
+
 it('ships with one job per node as the default', function () {
     // 0.10 shipped this driver behind a flag that defaulted to `single`, which
     // meant an upgrade changed nothing: the durability defect stayed live for
@@ -383,6 +418,7 @@ it('fails the run without retrying when an unsafe-to-replay node throws', functi
     $node = $run->nodes()->where('node_id', 'pr')->first();
     expect($node->status)->toBe(WorkflowRunNode::FAILED);
     expect($node->attempts)->toBe(1); // never re-claimed
+    expect($node->inputs)->toBe(['in' => [], 't' => []]); // captured before the executor threw
 
     // The nodes that DID complete keep their checkpoints, so a re-dispatch
     // resumes rather than replaying them.
@@ -406,6 +442,22 @@ it('honours a per-kind tries override', function () {
 
     $job = Queue::pushed(RunNodeJob::class)->first(fn (RunNodeJob $j) => $j->nodeId === 'a');
     expect($job->tries)->toBe(4);
+});
+
+it('keeps the latest exact inputs when the same job retries its claim', function () {
+    $run = pnRun(pnSchema([pnNode('a', 'manual_trigger')]));
+
+    expect(NodeClaims::claim($run->run_key, 'a', 'owner'))->toBe(NodeClaims::WON);
+    NodeClaims::recordInputs($run->run_key, 'a', 'owner', ['attempt' => 1]);
+
+    expect(NodeClaims::claim($run->run_key, 'a', 'owner'))->toBe(NodeClaims::RECLAIMED);
+    NodeClaims::recordInputs($run->run_key, 'a', 'owner', ['attempt' => 2]);
+
+    $row = $run->nodes()->where('node_id', 'a')->firstOrFail();
+    expect($row->attempts)->toBe(2);
+    expect($row->inputs)->toBe(['attempt' => 2]);
+    expect(fn () => NodeClaims::recordInputs($run->run_key, 'a', 'other-owner', ['wrong' => true]))
+        ->toThrow(RuntimeException::class, 'unowned workflow node a');
 });
 
 // ── fan-out and fan-in ─────────────────────────────────────────────────────
@@ -476,6 +528,7 @@ it('records a dead branch as skipped and never dispatches a job for it', functio
     expect(PnLog::$ran)->toBe(['no']);
 
     expect($run->nodes()->where('node_id', 'yes')->first()->status)->toBe(WorkflowRunNode::SKIPPED);
+    expect($run->nodes()->where('node_id', 'yes')->first()->inputs)->toBeNull();
 
     // Never even queued — a skip is decided by the frontier, not paid for with
     // a round trip and a job that no-ops.
@@ -520,7 +573,9 @@ it('parks on a human_approval node and resumes on approve()', function () {
 
     expect($run->status)->toBe(WorkflowRun::AWAITING_APPROVAL);
     expect($run->awaiting_node)->toBe('ap');
-    expect($run->nodes()->where('node_id', 'ap')->first()->status)->toBe(WorkflowRunNode::PAUSED);
+    $paused = $run->nodes()->where('node_id', 'ap')->first();
+    expect($paused->status)->toBe(WorkflowRunNode::PAUSED);
+    expect($paused->inputs)->toHaveKeys(['in', 't']);
 
     $run->approve();
     $run->refresh();
@@ -528,7 +583,9 @@ it('parks on a human_approval node and resumes on approve()', function () {
     expect($run->status)->toBe(WorkflowRun::COMPLETED);
     expect($run->outputs)->toHaveKey('o');
     // The paused claim was released so the node could consume the decision.
-    expect($run->nodes()->where('node_id', 'ap')->first()->status)->toBe(WorkflowRunNode::COMPLETED);
+    $completed = $run->nodes()->where('node_id', 'ap')->first();
+    expect($completed->status)->toBe(WorkflowRunNode::COMPLETED);
+    expect($completed->inputs)->toHaveKeys(['in', 't']);
 });
 
 it('parks on a third-party wait and resumes with the submitted payload', function () {

@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string                  $node_id
  * @property string                  $status   claimed | completed | skipped | paused | failed
  * @property string|null             $owner
+ * @property array<string,mixed>|null $inputs
  * @property mixed                   $output
  * @property list<string>|null       $ports
  * @property string|null             $error
@@ -59,6 +60,7 @@ class WorkflowRunNode extends Model
     protected $guarded = [];
 
     protected $casts = [
+        'inputs' => 'array',
         'output' => 'array',
         'ports' => 'array',
         'attempts' => 'integer',

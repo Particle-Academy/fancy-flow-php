@@ -18,6 +18,7 @@ use FancyFlow\Laravel\Runs\RunSetup;
 use FancyFlow\Laravel\TriggerCohort;
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Runtime\Pause;
+use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\RunOptions;
 use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Schema\FlowNode;
@@ -199,6 +200,9 @@ final class RunNodeJob implements ShouldQueue
                 run: RunSetup::identityFor($run, $rows, $nodeId),
             ),
             runId: $run->run_key,
+            onTargetContext: function (ExecutionContext $ctx) use ($nodeId): void {
+                NodeClaims::recordInputs($this->runKey, $nodeId, $this->token, $ctx->inputs);
+            },
         );
 
         $result = $replay['result'];

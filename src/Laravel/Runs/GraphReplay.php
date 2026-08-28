@@ -73,6 +73,7 @@ final class GraphReplay
         ExecutorRegistry $executors,
         RunOptions $options,
         string $runId,
+        ?callable $onTargetContext = null,
     ): array {
         $boundary = static function (ExecutionContext $ctx): never {
             $ctx->abort(self::BOUNDARY);
@@ -84,6 +85,22 @@ final class GraphReplay
                 // bindNode outranks kind bindings AND the `*` fallback, so this
                 // fences off the whole graph regardless of what a host bound.
                 $fork->bindNode($node->id, $boundary);
+            }
+        }
+
+        // This wrapper sees the ExecutionContext AFTER FlowRunner has resolved
+        // the real inputs and BEFORE the executor can perform a side effect.
+        // Capturing here keeps collectInputs() the one routing implementation.
+        if ($nodeId !== null && $onTargetContext !== null) {
+            $target = $graph->node($nodeId);
+            $targetExecutor = $target === null ? null : $executors->resolveFor($target);
+
+            if ($targetExecutor !== null) {
+                $fork->bindNode($nodeId, static function (ExecutionContext $ctx) use ($onTargetContext, $targetExecutor): mixed {
+                    $onTargetContext($ctx);
+
+                    return $targetExecutor($ctx);
+                });
             }
         }
 

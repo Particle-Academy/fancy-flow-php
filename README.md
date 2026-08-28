@@ -369,8 +369,27 @@ wait. Fan-out always dispatches, so parallelism is never traded away. It is off
 by default, because it trades a little of the durability the driver exists to
 provide.
 
-Per-node state is queryable: `$run->nodes()` returns a row per node with its
-status, output, activated ports, and attempt count.
+Per-node state is queryable: `$run->nodes()` returns the durable execution
+record for each node with its exact resolved `inputs`, `output`, status,
+activated ports, attempt count, error, and timestamps. Inputs are captured from
+the real `ExecutionContext` before the executor starts — including seeded entry
+values, source-node aliases, explicit nulls, and `$props` — rather than inferred
+from upstream outputs:
+
+```php
+$node = $run->nodes()->where('node_id', 'send')->first();
+$node->inputs;       // exact input-port map delivered to the executor
+$node->output;
+$node->status;       // claimed | completed | skipped | paused | failed
+$node->attempts;
+$node->error;
+$node->claimed_at;
+$node->completed_at;
+```
+
+On retry, `inputs` describes the latest attempt represented by the row. Skipped
+nodes and checkpoints created before this column existed leave it `null`; the
+driver never invents historical inputs it cannot know.
 
 #### Testing a durable run — do not drive a real worker
 

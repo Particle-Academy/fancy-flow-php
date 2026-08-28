@@ -8,6 +8,7 @@ use FancyFlow\Laravel\Models\WorkflowRunNode;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
+use RuntimeException;
 
 /**
  * The claim. One node of one run belongs to exactly one worker, and the
@@ -108,6 +109,33 @@ final class NodeClaims
             'ports' => array_values($ports),
             'error' => null,
         ]);
+    }
+
+    /**
+     * Persist the exact inputs the engine delivered before the executor starts.
+     *
+     * Owner + claimed status are part of the write contract: a stale or losing
+     * worker must never overwrite the execution record belonging to another
+     * attempt. Refusing to execute when the record cannot be written is safer
+     * than performing an external side effect whose inputs the durable debugger
+     * then cannot explain.
+     *
+     * @param array<string,mixed> $inputs
+     */
+    public static function recordInputs(string $runKey, string $nodeId, string $owner, array $inputs): void
+    {
+        $row = WorkflowRunNode::query()
+            ->where('run_key', $runKey)
+            ->where('node_id', $nodeId)
+            ->where('owner', $owner)
+            ->where('status', WorkflowRunNode::CLAIMED)
+            ->first();
+
+        if ($row === null) {
+            throw new RuntimeException("Cannot record inputs for unowned workflow node {$nodeId}.");
+        }
+
+        $row->forceFill(['inputs' => $inputs])->save();
     }
 
     /**

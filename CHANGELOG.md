@@ -8,6 +8,25 @@ upgrading.
 
 ---
 
+## 0.49.0 — 2026-08-27
+
+### Added
+
+- **Durable per-node records now include the exact inputs the executor
+  received.** `WorkflowRunNode::$inputs` is captured from the engine-created
+  `ExecutionContext` before the executor starts, beside the row's existing
+  output, status, activated ports, attempts, error and timestamps. An admin run
+  debugger can therefore show the live values that actually passed through a
+  node without recreating Fancy Flow's port-resolution rules in the host.
+
+  Failed and paused nodes retain their delivered inputs; retries expose the
+  latest attempt. Skipped nodes and old checkpoints remain `null` rather than
+  presenting inferred history as fact. Consumers using the `per_node` driver
+  should run the new published migration; no application code change is
+  required to keep executing workflows.
+
+---
+
 ## 0.48.1 — 2026-08-26
 
 ### Fixed
