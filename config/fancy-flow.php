@@ -179,6 +179,11 @@ return [
     'persistence' => [
         'enabled' => false,
         'table_prefix' => 'fancy_flow_',
+
+        // Maximum JSON bytes retained for one node's inspectable input record.
+        // The executor receives the original value; only the durable copy is
+        // recursively redacted and bounded. Set by code/config, not per graph.
+        'recorded_input_max_bytes' => 262_144,
     ],
 
     /*

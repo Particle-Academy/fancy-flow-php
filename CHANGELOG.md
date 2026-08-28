@@ -8,6 +8,21 @@ upgrading.
 
 ---
 
+## 0.49.1 — 2026-08-27
+
+### Security
+
+- **Resolved node inputs are now recursively redacted and size-bounded before
+  persistence.** Common password, secret, credential, authorization, cookie,
+  private-key, API-key and access/refresh-token keys are replaced with
+  `[REDACTED]` at any depth. The inspectable copy is capped at 256 KiB by
+  default (`persistence.recorded_input_max_bytes`) with visible truncation
+  markers, while the executor continues to receive the original untouched
+  inputs. This prevents the new 0.49 execution record from turning credentials
+  or unbounded payloads into durable run history.
+
+---
+
 ## 0.49.0 — 2026-08-27
 
 ### Added

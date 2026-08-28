@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FancyFlow\Laravel\Runs;
 
 use FancyFlow\Laravel\Models\WorkflowRunNode;
+use FancyFlow\Security\RecordedPayload;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
@@ -135,7 +136,10 @@ final class NodeClaims
             throw new RuntimeException("Cannot record inputs for unowned workflow node {$nodeId}.");
         }
 
-        $row->forceFill(['inputs' => $inputs])->save();
+        $row->forceFill(['inputs' => RecordedPayload::sanitize(
+            $inputs,
+            maxBytes: (int) config('fancy-flow.persistence.recorded_input_max_bytes', 262_144),
+        )])->save();
     }
 
     /**

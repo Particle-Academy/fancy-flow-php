@@ -370,15 +370,17 @@ by default, because it trades a little of the durability the driver exists to
 provide.
 
 Per-node state is queryable: `$run->nodes()` returns the durable execution
-record for each node with its exact resolved `inputs`, `output`, status,
+record for each node with its resolved `inputs`, `output`, status,
 activated ports, attempt count, error, and timestamps. Inputs are captured from
 the real `ExecutionContext` before the executor starts — including seeded entry
 values, source-node aliases, explicit nulls, and `$props` — rather than inferred
-from upstream outputs:
+from upstream outputs. The durable copy recursively replaces sensitive-key
+values with `[REDACTED]` and is bounded to 256 KiB by default; the executor
+still receives the original, untouched inputs:
 
 ```php
 $node = $run->nodes()->where('node_id', 'send')->first();
-$node->inputs;       // exact input-port map delivered to the executor
+$node->inputs;       // resolved input-port map, safely recorded
 $node->output;
 $node->status;       // claimed | completed | skipped | paused | failed
 $node->attempts;
@@ -390,6 +392,10 @@ $node->completed_at;
 On retry, `inputs` describes the latest attempt represented by the row. Skipped
 nodes and checkpoints created before this column existed leave it `null`; the
 driver never invents historical inputs it cannot know.
+
+Change the storage ceiling with
+`fancy-flow.persistence.recorded_input_max_bytes`. Redaction is always on and
+cannot be disabled by workflow-authored data.
 
 #### Testing a durable run — do not drive a real worker
 

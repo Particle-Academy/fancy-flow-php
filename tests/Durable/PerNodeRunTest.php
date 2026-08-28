@@ -214,6 +214,28 @@ it('records the exact resolved inputs delivered to each node', function () {
     ]);
 });
 
+it('records a redacted bounded copy without changing what the executor receives', function () {
+    $delivered = null;
+    FancyFlow::extend('inspect', function (ExecutionContext $ctx) use (&$delivered): mixed {
+        $delivered = $ctx->inputs;
+
+        return 'done';
+    }, [
+        'name' => 'inspect', 'category' => 'logic', 'label' => 'Inspect',
+        'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'out']],
+    ]);
+
+    $secret = ['password' => 'do-not-store', 'nested' => ['accessToken' => 'also-secret']];
+    $run = FancyFlow::dispatch(pnSchema([pnNode('inspect', 'inspect')]), ['inspect' => $secret]);
+    $recorded = $run->nodes()->where('node_id', 'inspect')->firstOrFail()->inputs;
+
+    expect($delivered)->toBe($secret);
+    expect($recorded)->toBe([
+        'password' => '[REDACTED]',
+        'nested' => ['accessToken' => '[REDACTED]'],
+    ]);
+});
+
 it('ships with one job per node as the default', function () {
     // 0.10 shipped this driver behind a flag that defaulted to `single`, which
     // meant an upgrade changed nothing: the durability defect stayed live for
