@@ -33,6 +33,20 @@ final class FlowNode
      *        SECOND attempt at this node costs. Durable runs retry; declaring
      *        `unsafe-to-replay` is what pins the node to a single attempt under the
      *        per-node queue driver instead of opening a second pull request.
+     * @param string|null $accent the kind's colour in authoring surfaces.
+     * @param array<string,mixed> $defaultConfig config a freshly-dropped node starts with.
+     * @param string|null $pausesForHuman DECLARES that this kind stops and waits for a
+     *        person, and why. Only a declaration — the executor still emits the pause —
+     *        but without it nothing downstream can tell a run will park rather than fail.
+     * @param list<array<string,mixed>>|string|null $outputShape the FIELDS this kind
+     *        emits, not its ports. Pass {@see \FancyFlow\Registry\NodeKind::DYNAMIC_OUTPUT_SHAPE}
+     *        when the shape depends on config: an attribute cannot hold a closure, and
+     *        the marker is how it still says "a shape exists, this process cannot
+     *        resolve it". `[]` is the DIFFERENT, positive claim that it emits no fields;
+     *        omitting it says nothing at all. Do not collapse those three.
+     * @param string|null $emits where the emitted fields come from — `input`,
+     *        `inputs-merged`, `input-map-merged`, `expression:<key>`. `outputShape`
+     *        answers *which fields*; this answers *where from*.
      */
     public function __construct(
         public readonly string $name,
@@ -45,6 +59,11 @@ final class FlowNode
         public readonly ?array $outputs = null,
         public readonly array $aliases = [],
         public readonly ?string $sideEffects = null,
+        public readonly ?string $accent = null,
+        public readonly array $defaultConfig = [],
+        public readonly ?string $pausesForHuman = null,
+        public readonly array|string|null $outputShape = null,
+        public readonly ?string $emits = null,
     ) {}
 
     /**
@@ -85,6 +104,25 @@ final class FlowNode
         }
         if ($this->sideEffects !== null) {
             $kind['sideEffects'] = $this->sideEffects;
+        }
+        if ($this->accent !== null) {
+            $kind['accent'] = $this->accent;
+        }
+        if ($this->defaultConfig !== []) {
+            $kind['defaultConfig'] = $this->defaultConfig;
+        }
+        if ($this->pausesForHuman !== null) {
+            $kind['pausesForHuman'] = $this->pausesForHuman;
+        }
+        // Compared against null, NOT emptiness: `outputShape: []` is the
+        // positive claim "this kind emits no fields", and dropping it would
+        // turn that statement back into silence — which every consumer is
+        // required to read as "unknown". Those are different answers.
+        if ($this->outputShape !== null) {
+            $kind['outputShape'] = $this->outputShape;
+        }
+        if ($this->emits !== null) {
+            $kind['emits'] = $this->emits;
         }
 
         return $kind;

@@ -8,6 +8,44 @@ upgrading.
 
 ---
 
+## 0.50.0 — 2026-09-03
+
+### Added
+
+- **`#[FlowNode]` can now declare the whole non-rendering kind.** Five fields
+  were missing from the attribute — `accent`, `defaultConfig`,
+  `pausesForHuman`, `outputShape` and `emits` — so `toKindArray()` never
+  emitted them and discovery silently lost them. A human-pausing kind
+  registered as `pausesForHuman: null`, which meant nothing downstream could
+  tell the run would park and wait for a person rather than fail; and every
+  attribute-discovered kind reported no output shape, forcing a host to keep a
+  parallel output-shape table beside the executor. Two definitions of one fact
+  is the drift co-located discovery exists to prevent
+  (fancy-flow-php#14).
+
+  **Nothing to do on upgrade** — every new parameter is optional and named, and
+  a kind that declares none behaves exactly as before.
+
+  A closure cannot live in a PHP attribute, so a config-dependent shape is
+  declared with the existing marker, which `NodeKind::fromArray()` turns back
+  into a closure yielding null:
+
+  ```php
+  #[FlowNode(
+      name: '@acme/approve',
+      pausesForHuman: 'approval',
+      outputShape: NodeKind::DYNAMIC_OUTPUT_SHAPE,
+      emits: 'input',
+  )]
+  ```
+
+  Kinds declared in config keep passing real closures; nothing there narrows.
+  `outputShape: []` remains the positive claim "emits no fields", distinct from
+  omitting it, and the attribute preserves that distinction rather than
+  collapsing empty into absent.
+
+---
+
 ## 0.49.1 — 2026-08-27
 
 ### Security
