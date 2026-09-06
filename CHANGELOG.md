@@ -8,6 +8,57 @@ upgrading.
 
 ---
 
+## 0.51.0 — 2026-09-05
+
+### Fixed
+
+- **`parentId` survives import and export.** It was neither read nor written,
+  so a graph loaded here and saved back lost every grouping a person had drawn
+  — silently and completely. `extent`, `width`, `height` and `style` are
+  carried with it: half a restoration (a child that kept its parent but lost
+  its containment rule, a lane back at its default size) reads as a canvas
+  somebody nudged rather than as data a tool destroyed.
+
+  The WorkflowSchema's own comment invited this, saying the visual fields exist
+  "purely for the canvas" so "a runtime that only walks edges and ports ignores
+  all of these". That was true when they were decoration. The TypeScript
+  runtime's terminal lanes make `parentId` load-bearing for EXECUTION — a lane
+  owns one terminal and membership is that field — and the comment has been
+  corrected there. **Nothing to do** unless you round-trip graphs, in which
+  case grouping now survives where it previously did not.
+
+- **A graph containing a `lane` runs.** The TypeScript engine ships
+  `@particle-academy/lane` and walks straight past it; this runner skipped only
+  `note`, so the same WorkflowSchema failed here with
+  `No executor registered for kind=lane` — breaking the one guarantee this
+  package makes.
+
+  It now skips by CATEGORY (`layout` / `annotation`) the way the TypeScript
+  engine does, so a host's own swimlane needs no executor either, with `lane`
+  and `terminal_lane` also matched by id because this registry has never
+  declared a `lane` kind.
+
+  `GraphConnectivity::mayFloat()` already knew — its comment says "a laned
+  graph authored in the TS editor carries `lane` nodes that PHP's registry does
+  not have". It exempted them from connectivity errors while the runner kept
+  refusing to run them, and `RunEvent` documented a `"lane"` status text that
+  nothing had ever emitted. The analysis knew, the runner did not, and nothing
+  compared them.
+
+  Terminal lanes remain **excluded from this runtime by design** — they need
+  desktop execution. A `terminal_lane` is walked past here; the terminal nodes
+  inside one have no executor and say so, which is the honest answer.
+
+### Note on this release
+
+This entry landed in the commit AFTER the `v0.51.0` tag, not before it. The
+script that was to write it asserted on the TypeScript repo's `## [0.50.0]`
+heading format while this file uses `## 0.50.0 — date`, so it failed — and the
+tag was not guarded on it succeeding. Recorded rather than quietly backfilled:
+the npm side has CI that fails a tag whose version has no changelog entry, and
+this runtime has no publish workflow to do the same. That asymmetry is the
+actual finding.
+
 ## 0.50.0 — 2026-09-03
 
 ### Added
