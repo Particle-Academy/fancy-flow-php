@@ -49,11 +49,31 @@ upgrading.
   desktop execution. A `terminal_lane` is walked past here; the terminal nodes
   inside one have no executor and say so, which is the honest answer.
 
-### Note on this release
+### Note on this release — and a correction to it
 
-This entry landed in the commit AFTER the `v0.51.0` tag, not before it. The
-script that was to write it asserted on the TypeScript repo's `## [0.50.0]`
-heading format while this file uses `## 0.50.0 — date`, so it failed — and the
+This entry landed in the commit AFTER the `v0.51.0` tag. The script that was to
+write it asserted on the TypeScript repo's `## [0.50.0]` heading while this file
+uses `## 0.50.0 — date`, so it failed, and the tag was not guarded on it
+succeeding.
+
+**The first version of this note then blamed the wrong thing.** It said this
+runtime "has no publish workflow" to fail a tag whose version has no changelog
+entry. That is false. `.github/workflows/release-gate.yml` fires on `v*` tags
+and checks BOTH presence and ORDER, identically to the npm side — and it did
+fire: the run for `v0.51.0` is a **failure**.
+
+Packagist syncs from the git push webhook, independent of GitHub Actions, so the
+release went out while the gate went red. **Nobody read it.**
+
+That is a worse finding than the one it replaced, and it is not a new one.
+`.ai/tools/release-preflight.sh` exists precisely because of this repo — its own
+header names the tags it shipped this way — it runs `composer test`, and running
+it before `git tag` would have caught the missing entry. It was run for
+`fancy-flow`'s two releases the same evening and skipped here.
+
+The gate is not the problem. Standing where it fires is.
+
+## 0.50.0 — date`, so it failed — and the
 tag was not guarded on it succeeding. Recorded rather than quietly backfilled:
 the npm side has CI that fails a tag whose version has no changelog entry, and
 this runtime has no publish workflow to do the same. That asymmetry is the
