@@ -179,6 +179,17 @@ final class Workflow
                 startingMsg: isset($raw['startingMsg']) ? (string) $raw['startingMsg'] : null,
                 stoppingMsg: isset($raw['stoppingMsg']) ? (string) $raw['stoppingMsg'] : null,
                 config: $config,
+                // Visual layout, carried rather than dropped. `parentId` says
+                // which container a node sits in, and the TypeScript runtime
+                // now makes that load-bearing for EXECUTION -- a terminal lane
+                // owns one session and membership is this field. Dropping it
+                // did not merely flatten a canvas: a graph read here and
+                // written back lost every grouping a person had drawn.
+                parentId: isset($raw['parentId']) ? (string) $raw['parentId'] : null,
+                extent: $raw['extent'] ?? null,
+                width: isset($raw['width']) ? (float) $raw['width'] : null,
+                height: isset($raw['height']) ? (float) $raw['height'] : null,
+                style: isset($raw['style']) && is_array($raw['style']) ? $raw['style'] : null,
                 // inputs/outputs intentionally left null on import — the engine
                 // then defaults to a single `out` port, matching the TS import.
             );
@@ -325,6 +336,23 @@ final class Workflow
         }
         if ($node->config !== []) {
             $out['config'] = $node->config;
+        }
+        // Omitted when unset, matching the TypeScript writer, so a graph of
+        // plain nodes gains no empty keys.
+        if ($node->parentId !== null) {
+            $out['parentId'] = $node->parentId;
+        }
+        if ($node->extent !== null) {
+            $out['extent'] = $node->extent;
+        }
+        if ($node->width !== null) {
+            $out['width'] = $node->width;
+        }
+        if ($node->height !== null) {
+            $out['height'] = $node->height;
+        }
+        if ($node->style !== null && $node->style !== []) {
+            $out['style'] = $node->style;
         }
 
         return $out;

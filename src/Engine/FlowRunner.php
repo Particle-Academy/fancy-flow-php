@@ -209,12 +209,23 @@ final class FlowRunner
                 }
             }
 
-            // Note nodes are annotations — never executed. Matched across every
-            // id the kind answers to: a graph saved with the canonical
-            // `@particle-academy/note` must stay an annotation, not become an
-            // unrunnable node.
-            if ($node->type !== null && KindId::matches($node->type, 'note')) {
-                $emit(RunEvent::nodeStatus($node->id, NodeStatus::IDLE, 'annotation'));
+            // Annotations and LAYOUT nodes never execute.
+            //
+            // This matched `note` and nothing else, so a graph containing the
+            // `@particle-academy/lane` the TypeScript runtime ships -- and
+            // walks straight past -- failed here with "No executor registered
+            // for kind=lane". Same WorkflowSchema, different answer per
+            // runtime, which is the one guarantee this package makes.
+            //
+            // `GraphConnectivity::mayFloat()` already knew, naming the lane as
+            // "a swimlane its engine walks straight past", and `RunEvent`
+            // already documented a "lane" status text nothing had ever
+            // emitted. The analysis knew, the runner did not, and nothing
+            // compared them.
+            $skip = self::neverExecutes($node->type, $executors->kinds());
+
+            if ($skip !== null) {
+                $emit(RunEvent::nodeStatus($node->id, NodeStatus::IDLE, $skip));
 
                 continue;
             }
@@ -479,6 +490,52 @@ final class FlowRunner
      *
      * @return array{ports:list<string>,value:mixed}
      */
+    /**
+     * The status text for a kind the engine walks past, or null to run it.
+     *
+     * Mirrors {@see GraphConnectivity::mayFloat()} on purpose -- a node that
+     * may float unconnected and a node that never executes are the same set,
+     * and the two answering differently is how a lane became floatable and
+     * unrunnable at the same time.
+     *
+     * The kinds this kit SHIPS are matched by id as well as by category,
+     * because a caller's registry may not have them: PHP has never declared a
+     * `lane` kind, and `mayFloat`'s own comment already had to work around
+     * exactly that -- "a laned graph authored in the TS editor carries `lane`
+     * nodes that PHP's registry does not have".
+     *
+     * An UNKNOWN kind returns null -- running is the default, and a kind
+     * nobody registered still needs an executor. `mayFloat` differs there, and
+     * only there: it lets an unknown kind float because it cannot know what
+     * the kind is, which is the honest answer to a different question.
+     */
+    private static function neverExecutes(?string $kindId, ?NodeKindRegistry $kinds): ?string
+    {
+        if ($kindId === null || $kindId === '') {
+            return null;
+        }
+
+        if (KindId::matches($kindId, 'note')) {
+            return 'annotation';
+        }
+
+        if (KindId::matches($kindId, 'lane') || KindId::matches($kindId, 'terminal_lane')) {
+            return 'lane';
+        }
+
+        $kind = $kinds?->get($kindId);
+
+        if ($kind === null) {
+            return null;
+        }
+
+        return match ($kind->category) {
+            'annotation' => 'annotation',
+            'layout' => 'lane',
+            default => null,
+        };
+    }
+
     private function activatedPorts(FlowNode $node, mixed $result, ?NodeKindRegistry $kinds = null): array
     {
         if (is_array($result)) {
