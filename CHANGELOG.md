@@ -73,12 +73,6 @@ it before `git tag` would have caught the missing entry. It was run for
 
 The gate is not the problem. Standing where it fires is.
 
-## 0.50.0 — date`, so it failed — and the
-tag was not guarded on it succeeding. Recorded rather than quietly backfilled:
-the npm side has CI that fails a tag whose version has no changelog entry, and
-this runtime has no publish workflow to do the same. That asymmetry is the
-actual finding.
-
 ## 0.50.0 — 2026-09-03
 
 ### Added
