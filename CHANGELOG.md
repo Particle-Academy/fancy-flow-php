@@ -8,6 +8,38 @@ upgrading.
 
 ---
 
+## 0.51.1 — 2026-09-12
+
+### Fixed
+
+- **Every install instruction named the UNMAINTAINED Prism.** `LlmClientDetector`
+  told people to run `composer require prism-php/prism`, and so did the adapter's
+  exception and the `config/fancy-flow.php` comment.
+
+  The README has always been right — it says `particle-academy/prism`, explains
+  it is the maintained fork of an upstream that has not shipped since March 2026,
+  and warns that installing BOTH leaves two copies of every `Prism\Prism\*`
+  class because the fork declares no `replace`. The runtime strings said the
+  opposite, and those are the ones that get followed: a README is read once
+  before anything breaks, an error message is read at the moment someone is
+  stuck and looking for the next command to type.
+
+  For anyone who already had the fork, the command we printed would have
+  installed exactly the duplicate-namespace state the README warns about.
+
+  Detection is unchanged and was never wrong — `class_exists(Prism\Prism\Prism)`
+  is satisfied by either distribution, so nothing about which package is present
+  changes behaviour. Only the human-facing guidance was pointing the wrong way.
+
+  Found by an agent in another workspace that read the config comment, proposed
+  the upstream library, and was corrected by its owner. The correction should not
+  have been necessary; our own file sent them there.
+
+  `InstallGuidanceNamesTheMaintainedPrismTest` pins both halves — that no source
+  prints the upstream install command, and that each one names the maintained
+  package, since removing the wrong name without adding the right one would leave
+  someone with no command at all.
+
 ## 0.51.0 — 2026-09-05
 
 ### Fixed

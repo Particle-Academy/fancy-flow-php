@@ -15,9 +15,9 @@ use Prism\Prism\Schema\ObjectSchema;
 use Prism\Prism\Schema\StringSchema;
 
 /**
- * `llm_router` over prism-php/prism.
+ * `llm_router` over Prism.
  *
- * OPTIONAL — `prism-php/prism` lives under composer `suggest`, never `require`,
+ * OPTIONAL — Prism lives under composer `suggest`, never `require`,
  * and every entry point is {@see isAvailable()}-guarded. Core keeps its
  * no-runtime-dependencies rule; apps that already use Prism get a working
  * `llm_router` with no glue.
@@ -48,7 +48,12 @@ final class PrismLlmClient implements LlmClient
     public function chooseRoute(LlmRouteRequest $request): LlmRouteChoice
     {
         if (! self::isAvailable()) {
-            throw new FlowException('PrismLlmClient requires prism-php/prism — run `composer require prism-php/prism`.');
+            throw new FlowException(
+                'PrismLlmClient requires Prism — run `composer require particle-academy/prism`. '
+                .'That is the MAINTAINED package; the upstream `prism-php/prism` has not shipped since '
+                .'March 2026 and shares the same namespace, so installing both leaves two copies of every '
+                .'`Prism\Prism\*` class.',
+            );
         }
 
         $provider = $request->provider ?? $this->defaultProvider ?? 'anthropic';

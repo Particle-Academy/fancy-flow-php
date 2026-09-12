@@ -59,7 +59,11 @@ it('refuses to pick a provider for you when both libraries are installed', funct
 
     expect(Capabilities::llmClient())->toBeNull();
     expect(Capabilities::llmUnavailableMessage())
-        ->toContain('both prism-php/prism and laravel/ai are installed')
+        // Names Prism generically, not the upstream package: the install
+        // guidance points at `particle-academy/prism` (the maintained fork),
+        // and this assertion is about REFUSING TO CHOOSE, not about which
+        // distribution is on disk.
+        ->toContain('both Prism and laravel/ai are installed')
         ->toContain('fancy-flow.llm.driver');
 })->skip(
     fn () => count(LlmClientDetector::available()) !== 2,

@@ -85,13 +85,14 @@ final class LlmClientDetector
         }
 
         if (count($available) > 1) {
-            return 'llm_router: both prism-php/prism and laravel/ai are installed, so fancy-flow will not choose for you. '
+            return 'llm_router: both Prism and laravel/ai are installed, so fancy-flow will not choose for you. '
                 .'Set config("fancy-flow.llm.driver") to "prism" or "laravel-ai", '
                 .'or register a client explicitly with FancyFlow\\Capabilities\\Capabilities::setLlmClient().';
         }
 
         return 'llm_router: no LLM client available. Install one of the supported libraries — '
-            .'`composer require prism-php/prism` or `composer require laravel/ai` — and fancy-flow wires it automatically. '
+            .'`composer require particle-academy/prism` or `composer require laravel/ai` — and fancy-flow wires it '
+            .'automatically. '
             .'To use anything else, implement FancyFlow\\Capabilities\\LlmClient and register it with '
             .'Capabilities::setLlmClient() (or bind it in the Laravel container). '
             .'fancy-flow ships the routing, not the model call.';
@@ -124,7 +125,7 @@ final class LlmClientDetector
     private static function installHint(string $driver): string
     {
         return match ($driver) {
-            self::PRISM => 'Run `composer require prism-php/prism`.',
+            self::PRISM => 'Run `composer require particle-academy/prism`.',
             self::LARAVEL_AI => 'Run `composer require laravel/ai`.',
             default => 'Supported drivers are "prism" and "laravel-ai".',
         };

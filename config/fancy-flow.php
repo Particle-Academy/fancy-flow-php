@@ -48,7 +48,7 @@ return [
     |--------------------------------------------------------------------------
     | `llm_router` is a shuttle, not an engine: it carries the declared routes
     | out to an LLM client and carries the choice back. fancy-flow ships working
-    | adapters for prism-php/prism and laravel/ai, and AUTO-DETECTS whichever
+    | adapters for particle-academy/prism and laravel/ai, and AUTO-DETECTS whichever
     | you have installed — no glue required.
     |
     | `driver`   only needed when BOTH libraries are installed (fancy-flow will
