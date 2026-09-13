@@ -63,6 +63,13 @@ facade + `FancyFlowManager`, the queue drivers (below), `TriggerCohort` (orderin
 Artisan commands, HTTP controllers, and `RunEvent` → Laravel events. Nothing here
 may leak into the core's `require`.
 
+**Discovery must never walk the process's classes.** `FlowNodeDiscovery::scan()`
+runs on every app boot, which in a host's test suite means once per test, and a
+process never un-declares a class. Iterating `get_declared_classes()` made each
+boot cost more than the last until a 3,300-test suite could not finish (#15). It
+reads the declarations out of the files it walks instead, and
+`FlowNodeDiscoveryCostTest` fails if its cost starts following the process again.
+
 ### Two queue drivers (`fancy-flow.queue.driver`)
 
 Durable runs are carried by one of two drivers. **Every entry point routes

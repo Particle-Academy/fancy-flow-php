@@ -8,9 +8,54 @@ upgrading.
 
 ---
 
-## 0.51.1 — 2026-09-12
+## 0.51.1 — 2026-09-13
 
 ### Fixed
+
+- **`#[FlowNode]` discovery got slower with every class the process had loaded,
+  so a long test suite could not finish** (#15). `FlowNodeDiscovery::scan()`
+  found the classes under its paths by reflecting EVERY declared class in the
+  process and keeping the ones whose file sat under a root. A Laravel suite boots
+  the app once per test and never un-declares anything, so each boot inspected
+  more classes than the last for the same result, and total discovery work grew
+  with the square of the suite's length.
+
+  It now reads which classes each walked file declares and reflects only those.
+  Measured over 2,000 boots with 23 nodes and eight unrelated classes declared
+  per boot, as mocks do:
+
+  | | per boot, first 250 | per boot, last 250 | whole run |
+  |---|---:|---:|---:|
+  | discovery off | 7.5 ms | 6.8 ms | 14 s |
+  | 0.51.0 | 38 ms | 461 ms | 462 s |
+  | 0.51.1 | 8.0 ms | 8.1 ms | 16 s |
+
+  **Upgrade and do nothing.** Every configured path is still walked and
+  required, and the same classes come back: instantiable, carrying the attribute,
+  declared in a `.php` file under a path. That includes a node class the host
+  had already autoloaded before discovery ran, which a scan that diffs
+  `get_declared_classes()` around its includes would have silently dropped.
+  One narrowing: a class under a path that was declared from a non-`.php` file
+  (an `.inc` pulled in by an include) used to be found, and is not now. The scan
+  only ever required `.php` files itself.
+
+  **On memory, since the report arrived as an out-of-memory failure:** discovery
+  was where that run died, not what filled it. The same 2,000 boots retained
+  60.7 MB with discovery off and 61.5 MB with 0.51.0's scan on, and the
+  difference is the probe's own node classes. The failing allocation was the
+  list of every declared class, which is why the error pointed at that line.
+  The time was real, and so was the quadratic growth.
+
+  Nothing in this suite exercised `scan()` before, even though every host with
+  `fancy-flow.discover` configured boots through it. `FlowNodeDiscoveryTest`
+  now pins what it returns, including braced namespaces, overlapping paths and
+  the pre-autoloaded case. `DiscoveryRegistersNodesTest` runs a discovered node
+  through the provider. `FlowNodeDiscoveryCostTest` declares 20,000 unrelated
+  classes in a child process; against 0.51.0 a scan went from 0.37 ms to 445 ms.
+
+  Discovery now uses `PhpToken`, from the tokenizer extension. `laravel/framework`
+  already requires it, and discovery lives only in the Laravel layer, so the
+  core's `require` is unchanged.
 
 - **Every install instruction named the UNMAINTAINED Prism.** `LlmClientDetector`
   told people to run `composer require prism-php/prism`, and so did the adapter's
