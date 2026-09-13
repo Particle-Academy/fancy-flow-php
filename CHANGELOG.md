@@ -8,6 +8,50 @@ upgrading.
 
 ---
 
+## 0.52.0 — 2026-09-13
+
+### Changed
+
+- **BREAKING: `lenient` no longer softens the schema version, and `run()`
+  refuses a versionless graph.** A lenient import used to turn
+  `Unsupported workflow schema version` into a warning and carry on, and
+  `FancyFlowManager::toGraph()` imports leniently on every `run()` and durable
+  job. So a document with no `version` ran here while a default import in
+  `@particle-academy/fancy-flow` or the Python runtime, both strict, refused the
+  same file. One document, two answers; the fancy-conformance
+  `flow/connector-runs` manifest recorded the split.
+
+  `lenient` exists for unknown vocabulary, a kind this host has not
+  registered. A version is the format itself, and a runtime cannot honour a
+  format it does not know. After migration of older numbered versions,
+  `version` must now be `1` (`1.0` is accepted, since JSON cannot tell them
+  apart in JavaScript; `"1"` and `true` are not), in every mode, with the same
+  rule in the TypeScript and Python runtimes.
+
+  A refused import returns an empty graph, so the paths that RUN an import no
+  longer hand that graph on:
+  - `FancyFlow::run()` and `toGraph()` throw the new
+    `FancyFlow\Exceptions\UnreadableWorkflow` (a `FlowException`, carrying the
+    import's errors in `$issues`). So does a `Route::flow()` endpoint on each
+    request.
+  - A durable run (either queue driver) whose stored `schema` has no version
+    settles as `failed` with that message, instead of completing with nothing
+    executed.
+  - A `subgraph` node whose `config.graph` is refused fails that node.
+  - `EloquentWorkflowResolver` resolves a stored workflow it cannot read to a
+    `WorkflowResolutionFailure` naming the error, so a `subflow` node aborts
+    with it instead of running nothing.
+
+  A graph that WAS read but carries some other error (a connectivity error,
+  for instance) still runs exactly as before. `ImportResult::refused()` is the
+  new check that tells the two apart.
+
+  **What to do:** a document without `version: 1` is now refused by every
+  import, lenient or not; documents exported by fancy-flow always carry it, so
+  re-export or add `version: 1`. That includes schemas stored in
+  `fancy_flow_workflows` and in the `schema` of runs still in flight; check
+  hand-written or seeded ones.
+
 ## 0.51.1 — 2026-09-13
 
 ### Fixed

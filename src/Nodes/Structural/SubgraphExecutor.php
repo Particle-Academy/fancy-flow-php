@@ -6,6 +6,7 @@ namespace FancyFlow\Nodes\Structural;
 
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Engine\FlowRunner;
+use FancyFlow\Exceptions\UnreadableWorkflow;
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Nodes\Support\ExecutorDeps;
 use FancyFlow\Registry\Builtin;
@@ -35,6 +36,11 @@ final class SubgraphExecutor implements NodeExecutor
 
         $registry = Builtin::register(new NodeKindRegistry(), withStructural: true);
         $import = Workflow::import($graph, lenient: true, registry: $registry);
+        // A nested graph that cannot be read fails THIS node. Running the empty
+        // graph a refused import returns would pass the node with nothing done.
+        if ($import->refused()) {
+            throw UnreadableWorkflow::from($import);
+        }
         $executors = Builtin::executors($this->deps);
 
         $result = (new FlowRunner())->run(

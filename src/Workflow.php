@@ -23,14 +23,6 @@ final class Workflow
     public const SCHEMA_URL = 'https://particle.academy/schemas/workflow/v1.json';
 
     /**
-     * Hydrate a WorkflowSchema (a JSON string or a decoded array) into a
-     * {@see FlowGraph}, validating kinds and configs against the registry.
-     * Reports issues for unknown kinds, missing required config, and dangling
-     * edges. In lenient mode, schema-level errors become warnings.
-     *
-     * @param string|array<string,mixed> $schema
-     */
-    /**
      * Every migration step, keyed by the version it upgrades FROM.
      *
      * A step keyed `N` takes a version-N document to version N+1. Empty today
@@ -102,6 +94,19 @@ final class Workflow
         return $schema;
     }
 
+    /**
+     * Hydrate a WorkflowSchema (a JSON string or a decoded array) into a
+     * {@see FlowGraph}, validating kinds and configs against the registry.
+     * Reports issues for unknown kinds, missing required config, and dangling
+     * edges. In lenient mode an unknown kind becomes a warning.
+     *
+     * The schema version is NEVER softened: a document that is not
+     * `version: 1` after migration is refused in every mode, with an empty
+     * graph. A runtime cannot honour a format it does not know, and one
+     * document must not run in one engine and be refused by another.
+     *
+     * @param string|array<string,mixed> $schema
+     */
     public static function import(
         string|array $schema,
         bool $lenient = false,
@@ -129,19 +134,25 @@ final class Workflow
         // reaches it unchanged and is reported exactly as it was before.
         $schema = self::migrate($schema);
 
+        // NEVER softened by `$lenient`. That flag is about unknown VOCABULARY (a
+        // kind this host has not registered); a version is the format itself,
+        // and a runtime cannot honour a format it does not know. It used to
+        // become a warning, and `FancyFlowManager::toGraph()` imports leniently
+        // on every run(), so one versionless document ran here and was refused
+        // by a default (strict) import in the TypeScript and Python runtimes.
+        //
+        // `1.0` is accepted: JSON decodes it to a float, and JavaScript cannot
+        // tell it from `1` at all, so refusing it here alone would be a split of
+        // its own. A string or a boolean is not a version.
         $version = $schema['version'] ?? null;
-        if ($version !== self::SCHEMA_VERSION) {
-            $issues[] = new ImportIssue(
-                $lenient ? ImportIssue::WARNING : ImportIssue::ERROR,
-                sprintf(
-                    'Unsupported workflow schema version: %s (expected %d)',
-                    var_export($version, true),
-                    self::SCHEMA_VERSION,
-                ),
-            );
-            if (! $lenient) {
-                return new ImportResult(false, new FlowGraph(), $issues);
-            }
+        if (! ((is_int($version) || is_float($version)) && $version == self::SCHEMA_VERSION)) {
+            $issues[] = ImportIssue::error(sprintf(
+                'Unsupported workflow schema version: %s (expected %d)',
+                var_export($version, true),
+                self::SCHEMA_VERSION,
+            ));
+
+            return new ImportResult(false, new FlowGraph(), $issues);
         }
 
         $rawNodes = $schema['graph']['nodes'] ?? [];

@@ -7,6 +7,7 @@ namespace FancyFlow\Laravel;
 use Closure;
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Engine\FlowRunner;
+use FancyFlow\Exceptions\UnreadableWorkflow;
 use FancyFlow\ExecutorRegistry;
 use FancyFlow\Laravel\Events\NodeMessage;
 use FancyFlow\Laravel\Events\NodeOutput;
@@ -263,16 +264,30 @@ final class FancyFlowManager
         return Workflow::export($flow instanceof ImportResult ? $flow->graph : $flow);
     }
 
+    /**
+     * The graph a run executes. A schema is imported leniently, so a kind this
+     * host has not registered is a warning and fails loudly at that node.
+     *
+     * A document the importer REFUSED -- one without `version: 1` is the common
+     * case, and `lenient` never softens that -- throws rather than handing back
+     * its empty graph. Running an empty graph reports success with nothing
+     * executed, which is worse than refusing. A graph that was read but carries
+     * errors (a connectivity error, say) still runs, as it always has.
+     *
+     * @throws UnreadableWorkflow
+     */
     public function toGraph(FlowGraph|ImportResult|string|array $flow): FlowGraph
     {
         if ($flow instanceof FlowGraph) {
             return $flow;
         }
-        if ($flow instanceof ImportResult) {
-            return $flow->graph;
+
+        $import = $flow instanceof ImportResult ? $flow : $this->import($flow, lenient: true);
+        if ($import->refused()) {
+            throw UnreadableWorkflow::from($import);
         }
 
-        return $this->import($flow, lenient: true)->graph;
+        return $import->graph;
     }
 
     public static function newRunId(): string

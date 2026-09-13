@@ -15,7 +15,15 @@ Node and PHP. Don't break it.
 
 ## Architecture (framework-free core)
 
-- `Workflow` — import/export/validate WorkflowSchema v1.
+- `Workflow` — import/export/validate WorkflowSchema v1. **`lenient` softens
+  vocabulary (an unknown kind), never the schema version:** a document that is
+  not `version: 1` after migration is refused in every mode with an empty graph,
+  exactly as the TS and Python importers refuse it. Anything that imports in
+  order to RUN must check `ImportResult::refused()` — `toGraph()` and the
+  `subgraph` executor throw `UnreadableWorkflow`, `EloquentWorkflowResolver`
+  returns a failure — or a refused document runs as an empty graph and reports
+  success. Refuse on `refused()`, not on `! ok`: a graph that was read but
+  carries a connectivity error has always run, and parity fixture 03 pins it.
 - `Engine\FlowRunner` — the `runFlow` port (Kahn topo, ports, branching, cycles,
   timeout). **Note:** a node runs when ≥1 incoming edge is active (merge-after-
   decision, `#1`), and `collectInputs` reads only active edges — that's the

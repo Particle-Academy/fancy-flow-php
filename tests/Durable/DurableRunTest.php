@@ -568,3 +568,26 @@ it('pauses at a human_approval node addressed by its CANONICAL kind id', functio
     expect($run->status)->toBe(WorkflowRun::AWAITING_APPROVAL);
     expect($run->awaiting_node)->toBe('gate');
 });
+
+it('fails a durable run whose stored schema has no version, rather than completing an empty one', function () {
+    $schema = dschema([dnode('t', 'manual_trigger'), dnode('o', 'output')], [['id' => 'e1', 'source' => 't', 'target' => 'o']]);
+    unset($schema['version']);
+
+    $run = new WorkflowRun();
+    $run->forceFill([
+        'run_key' => 'run_nover_'.bin2hex(random_bytes(4)),
+        'status' => WorkflowRun::PENDING,
+        'schema' => $schema,
+        'initial_inputs' => ['t' => ['x' => 1]],
+    ])->save();
+
+    try {
+        \FancyFlow\Laravel\Jobs\RunWorkflowJob::enqueue($run);
+    } catch (Throwable) {
+        // the sync queue re-throws what a real worker would retry, then fail
+    }
+
+    $run->refresh();
+    expect($run->status)->toBe(WorkflowRun::FAILED);
+    expect((string) $run->error)->toContain('Unsupported workflow schema version');
+});

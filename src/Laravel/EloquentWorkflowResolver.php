@@ -66,7 +66,22 @@ final class EloquentWorkflowResolver implements WorkflowResolver
         // Lenient: a stored graph referencing a kind this runtime doesn't know
         // is a warning, and the run then fails loudly at the unknown node —
         // better than the whole subflow silently resolving to nothing.
-        return Workflow::import($schema, lenient: true, registry: $this->kinds)->graph;
+        $import = Workflow::import($schema, lenient: true, registry: $this->kinds);
+
+        // A REFUSED document (no `version: 1`, which `lenient` never softens)
+        // imports to an empty graph, and a subflow resolved to it would run
+        // nothing and pass. A failure carrying the import's errors aborts the
+        // node with them instead, and the save-time cycle check skips it the
+        // same way it skips any ref that does not resolve.
+        if ($import->refused()) {
+            return WorkflowResolutionFailure::missing(sprintf(
+                'subflow "%s" could not be imported: %s',
+                $ref,
+                implode('; ', array_map(static fn ($issue): string => $issue->message, $import->errors())),
+            ));
+        }
+
+        return $import->graph;
     }
 
     private function find(string $ref, ?int $version = null): ?WorkflowModel

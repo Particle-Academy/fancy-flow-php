@@ -52,7 +52,12 @@ Ported faithfully from `fancy-flow@0.5.3` — this is a port, not a redesign:
 
 - **WorkflowSchema v1** — the portable JSON format. `Workflow::import()` /
   `Workflow::export()` round-trip it, reporting unknown kinds, missing required
-  config, and dangling edges as `ImportIssue`s (with a `lenient` mode).
+  config, and dangling edges as `ImportIssue`s (with a `lenient` mode that
+  softens an unknown kind to a warning). **`lenient` never covers the schema
+  version:** a document without `version: 1` is refused by every import, and
+  `FancyFlow::run()` throws `UnreadableWorkflow` for it rather than running an
+  empty graph. A runtime cannot honour a format it does not know, and the
+  TypeScript and Python runtimes refuse the same document.
 - **The engine** — `FlowRunner` runs a graph in Kahn topological order, once per
   node. A node runs when **at least one incoming edge is active**, so a **merge
   point after a Decision** composes correctly (the `#1` fix — the shared

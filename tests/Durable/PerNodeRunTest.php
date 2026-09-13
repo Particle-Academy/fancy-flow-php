@@ -1227,3 +1227,19 @@ it('CONTROL: the same setup DOES dispatch when the budget has room', function ()
 
     Queue::assertPushed(RunNodeJob::class);
 });
+
+it('fails a run whose stored schema has no version, rather than completing an empty one', function () {
+    $schema = pnSchema([pnNode('t', 'manual_trigger'), pnNode('o', 'output')], [pnEdge('e1', 't', 'o')]);
+    unset($schema['version']);
+    $run = pnRun($schema, ['t' => ['x' => 1]]);
+
+    try {
+        RunWorkflowJob::enqueue($run);
+    } catch (Throwable) {
+        // the sync queue re-throws what a real worker would retry, then fail
+    }
+
+    $run->refresh();
+    expect($run->status)->toBe(WorkflowRun::FAILED);
+    expect((string) $run->error)->toContain('Unsupported workflow schema version');
+});
