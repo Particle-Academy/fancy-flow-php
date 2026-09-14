@@ -1,5 +1,7 @@
 # fancy-flow-php
 
+[![Fancified](art/fancified.svg)](https://particle.academy)
+
 **A PHP runtime for [`@particle-academy/fancy-flow`](https://github.com/Particle-Academy/fancy-flow) workflow graphs.**
 The framework-free twin of fancy-flow's headless TypeScript engine: the *same*
 `WorkflowSchema` JSON in, the *same* outputs out. A graph an agent or human
@@ -12,9 +14,9 @@ authors in `<FlowEditor>` runs unchanged on a PHP backend.
 composer require particle-academy/fancy-flow-php
 ```
 
-Requires PHP 8.3+. The core has **zero framework dependencies**. (A Laravel
+Requires PHP 8.4+. The core has **zero framework dependencies**. (A Laravel
 integration — service provider, queued durable runs, `#[FlowNode]` discovery,
-broadcast run status — lands in 0.2.)
+broadcast run status — ships as an optional layer; see [Laravel](#laravel).)
 
 ---
 
