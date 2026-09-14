@@ -41,7 +41,17 @@ final class Expr
         $trimmed = trim($template);
 
         // Whole-string single expression → return the raw resolved value.
-        if (preg_match('/^\{\{\s*(.*?)\s*\}\}$/s', $trimmed, $m) === 1) {
+        //
+        // EXACTLY one expression: the capture may not contain `}}` or `{{`. The
+        // pattern is end-anchored, so its lazy capture used to grow to the end,
+        // and `{{ in.text }} --- {{ user.transcript }}` became ONE path that
+        // resolves to nothing -- the template returned null (#16). That was
+        // documented as a deliberate corner and mirrored in every runtime, so
+        // no parity table could see it. A template with several references now
+        // interpolates each.
+        if (preg_match('/^\{\{\s*(.*?)\s*\}\}$/s', $trimmed, $m) === 1
+            && ! str_contains($m[1], '}}')
+            && ! str_contains($m[1], '{{')) {
             $r = self::tryResolvePath($m[1], $context);
             if ($r->resolved) {
                 return $r->value;

@@ -169,13 +169,13 @@ it('does NOT throw for a path that resolved to null or empty', function () {
     expect(Expr::evaluate('{{ in.count }}', ctx(), UnresolvedPolicy::Throw))->toBe(0);
 });
 
-it('makes the documented {{a}}{{b}} corner visible rather than silently null', function () {
-    // A template that both starts with `{{` and ends with `}}` is ONE whole
-    // expression whose path contains the inner `}}{{`. Deliberate, and mirrored
-    // in the TS scanner. Under Keep the author at least SEES the template was
-    // never split.
-    $twoLooking = '{{ in.text }} / {{ in.text }}';
+it('interpolates a template that starts and ends with a reference but holds two', function () {
+    // This test used to PIN the corner: a template starting with `{{` and ending
+    // with `}}` was one whole expression whose path spanned the inner `}}{{`,
+    // so it returned null. That was the bug in #16, not a deliberate behaviour.
+    // See TemplateWithSeveralReferencesTest.
+    $two = '{{ in.text }} / {{ in.text }}';
 
-    expect(Expr::evaluate($twoLooking, ctx()))->toBeNull();
-    expect(Expr::evaluate($twoLooking, ctx(), UnresolvedPolicy::Keep))->toBe($twoLooking);
+    expect(Expr::evaluate($two, ctx()))->toBe('hello / hello');
+    expect(Expr::evaluate($two, ctx(), UnresolvedPolicy::Keep))->toBe('hello / hello');
 });

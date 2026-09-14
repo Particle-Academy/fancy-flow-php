@@ -8,6 +8,28 @@ upgrading.
 
 ---
 
+## 0.52.2 — 2026-09-15
+
+### Fixed
+
+- **A template that starts with `{{` and ends with `}}` but holds more than one
+  reference resolved to nothing** ([#16](https://github.com/Particle-Academy/fancy-flow-php/issues/16)).
+  `Expr::evaluate("{{ in.text }} --- {{ user.transcript }}", …)` returned `null`:
+  the whole-string fast path is end-anchored, so its lazy capture grew to the end
+  and read `in.text }} --- {{ user.transcript` as ONE path. A document or prompt
+  template shaped like that wrote nothing, with every reference individually
+  valid — a consumer chased it through four reports as an edge problem. The
+  whole-string branch now applies only when the template is exactly one
+  expression; anything else interpolates each reference, under every
+  `UnresolvedPolicy`. `{{ a }}{{ b }}` interpolates too.
+
+  This was documented as a deliberate corner and mirrored in the TS, Python and
+  Rust engines, which is why no parity table caught it. They follow.
+
+  **What you must do:** nothing, unless something relied on such a template
+  returning `null` (or itself, under `Keep`). It now returns the interpolated
+  string.
+
 ## 0.52.1 — 2026-09-13
 
 ### Fixed

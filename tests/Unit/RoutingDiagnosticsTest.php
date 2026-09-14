@@ -120,10 +120,11 @@ it('does not warn on a condition that mixes text with an expression', function (
     expect($r['warnings'])->toBe([]);
 });
 
-it('does not report the {{a}}{{b}} corner as a missing field', function () {
-    // The whole template is one expression whose path spans an inner `}}{{`.
-    // That is a malformed template, not an absent field, and saying "the path
-    // names no field" would send the reader somewhere useless.
+it('does not report two adjacent references as a missing field', function () {
+    // `{{ a }}{{ b }}` is two references that both resolve (it interpolates to
+    // "12" since #16; before, it was one path spanning `}}{{` that resolved to
+    // nothing). Neither reading may be reported as "the path names no field":
+    // the routing diagnostic is for a single whole expression only.
     $r = runBranch('{{ a }}{{ b }}', ['a' => 1, 'b' => 2]);
 
     expect($r['warnings'])->toBe([]);
