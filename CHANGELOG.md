@@ -24,7 +24,7 @@ upgrading.
   **What you must do:** nothing. Only a script that looks runs up by the old
   file (`gh run list --workflow=release-gate.yml`) needs `publish.yml` instead.
 
-## 0.52.2 — 2026-09-15
+## 0.52.2 — 2026-09-14
 
 ### Fixed
 
