@@ -8,6 +8,22 @@ upgrading.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **The tag workflow is now `.github/workflows/publish.yml`, named `Publish`**
+  (it was `release-gate.yml`, "Release gate"). Every Particle-Academy package
+  publishes from that file under that name. What it does is unchanged: on a
+  `v*` tag it checks that `CHANGELOG.md` has an entry for the version and that
+  the entry is the newest one, then publishes the GitHub release from that
+  entry. Packagist syncs from the tag and never reads the workflow file, so
+  nothing about how a release reaches Composer changes. The 0.51.0 note below
+  names the file by its old path, which was correct when it was written.
+
+  **What you must do:** nothing. Only a script that looks runs up by the old
+  file (`gh run list --workflow=release-gate.yml`) needs `publish.yml` instead.
+
 ## 0.52.2 — 2026-09-15
 
 ### Fixed

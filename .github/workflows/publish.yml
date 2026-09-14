@@ -1,4 +1,4 @@
-name: Release gate
+name: Publish
 
 # Fires on a version tag. Packagist syncs from the tag on its own, so unlike
 # the npm publish workflow this CANNOT PREVENT a release — by the time this
