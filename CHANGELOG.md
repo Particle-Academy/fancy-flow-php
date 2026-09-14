@@ -8,6 +8,28 @@ upgrading.
 
 ---
 
+## 0.52.1 — 2026-09-13
+
+### Fixed
+
+- **A node manifest's `name` is optional, and means "the package this node is
+  published from".** `NodeManifest::validate()` required it as "the package
+  name as installed", but no marketplace node is installed:
+  `fancy-cli add node` vendors the source. First-party nodes are source served
+  straight from the registry and have no package at all, so the only way to
+  satisfy the field was to invent one. Every first-party manifest said
+  `particle-academy/fancy-flow-nodes`, a package that never existed, and an
+  agent following it ran `composer require` into a 404.
+
+  A manifest without `name` now validates. One that has a `name` must still
+  make it a non-empty string, so a blank, non-string or `null` value is an
+  error, as before. `@particle-academy/fancy-flow` 0.70.1 and fancy-flow
+  (Python) 0.20.1 apply the same rule, so the three validators agree.
+
+  **What to do:** nothing. Every manifest that validated before still
+  validates. If you publish a node from a package, keep naming it. If there is
+  no package, omit the field rather than filling it.
+
 ## 0.52.0 — 2026-09-13
 
 ### Changed

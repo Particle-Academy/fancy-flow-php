@@ -73,8 +73,19 @@ final class NodeManifest
             }
         }
 
-        if (! is_string($input['name'] ?? null) || trim((string) $input['name']) === '') {
-            $problems[] = self::error('name', 'Required — the package name as installed.');
+        // `name` is OPTIONAL: the package this node is published from, when it
+        // is published from one. Provenance only — `fancy-cli add node` vendors
+        // the source and installs nothing named here. First-party nodes are
+        // source served straight from the registry and have no package, so
+        // while this was required their manifests carried an invented one
+        // (`particle-academy/fancy-flow-nodes`), and an agent following it ran
+        // `composer require` into a 404.
+        //
+        // `array_key_exists`, not `??`: a present `null` is a manifest that
+        // tried to name its package and failed, and the TypeScript and Python
+        // twins both treat it that way.
+        if (array_key_exists('name', $input) && (! is_string($input['name']) || trim($input['name']) === '')) {
+            $problems[] = self::error('name', 'When present, the package this node is published from. Omit it if there is none.');
         }
 
         self::validateKind($input['kind'] ?? null, $problems);

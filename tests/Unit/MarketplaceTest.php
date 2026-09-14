@@ -44,8 +44,33 @@ it('reports every problem at once, not just the first', function () {
     // a five-minute fix into five round trips.
     $problems = NodeManifest::validate(['schemaVersion' => 1]);
 
-    expect(fields($problems))->toContain('name', 'kind', 'runtimes', 'fixtures');
+    expect(fields($problems))->toContain('kind', 'runtimes', 'fixtures');
 });
+
+it('accepts a node that is not published from a package, and names none', function () {
+    // First-party nodes are source served straight from the registry: there is
+    // no package. A REQUIRED package name could only be satisfied by inventing
+    // one, and the first-party manifests did exactly that —
+    // `particle-academy/fancy-flow-nodes`, which never existed, and which an
+    // agent then tried to `composer require`.
+    $manifest = validManifest();
+    unset($manifest['name']);
+
+    expect(NodeManifest::validate($manifest))->toBe([]);
+    expect(NodeManifest::isValid($manifest))->toBeTrue();
+});
+
+it('still rejects a name that is present but says nothing', function (mixed $name) {
+    // Optional is not "anything goes": a blank or non-string name is a manifest
+    // that tried to name its package and failed. `null` included — present is
+    // present, and the TypeScript and Python twins agree.
+    $problems = NodeManifest::validate(validManifest(['name' => $name]));
+
+    expect(NodeManifest::isValid(validManifest(['name' => $name])))->toBeFalse();
+    expect(fields($problems))->toContain('name');
+    $nameProblems = array_values(array_filter($problems, static fn (array $p) => $p['field'] === 'name'));
+    expect($nameProblems[0]['message'])->toContain('Omit it');
+})->with(['', '   ', 42, null]);
 
 it('rejects a bare, un-namespaced kind id', function () {
     // The one mistake that cannot be fixed later: the ambiguous string is
