@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FancyFlow\Laravel\Jobs;
 
+use FancyFlow\Engine\UndeliveredEdges;
 use FancyFlow\Laravel\Events\WorkflowFailed;
 use FancyFlow\Laravel\Events\WorkflowFinished;
 use FancyFlow\Laravel\Events\WorkflowSettled;
@@ -140,10 +141,15 @@ final class AdvanceWorkflowJob implements ShouldQueue
         $frontier = Frontier::compute($graph, NodeClaims::state($rows), $run->entry_nodes);
 
         if ($frontier['skipped'] !== []) {
+            $settledNow = [];
             foreach ($frontier['skipped'] as $nodeId) {
-                NodeClaims::skip($this->runKey, $nodeId);
+                if (NodeClaims::skip($this->runKey, $nodeId)) {
+                    $settledNow[] = $nodeId;
+                }
             }
             $rows = NodeClaims::all($this->runKey);
+
+            $this->warnAboutUndeliveredEdges($flow, $graph, $settledNow, NodeClaims::state($rows), $kinds);
         }
 
         $state = NodeClaims::state($rows);
@@ -257,6 +263,67 @@ final class AdvanceWorkflowJob implements ShouldQueue
         }
 
         return true;
+    }
+
+    /**
+     * Say what the engine would have said about the nodes just recorded as
+     * skipped.
+     *
+     * Every node job replays the graph and forwards only its own node's events.
+     * An edge whose source completed without publishing the port it reads is
+     * noticed when the replay reaches the TARGET -- and a skipped target never
+     * gets a job, so the warning was emitted inside some other node's replay and
+     * filtered out on every run. This is the moment the driver knows the target
+     * will not run, so it asks the engine's own rule here, once, from the ports
+     * the claim rows recorded off the engine's `node-output` events.
+     *
+     * A target that RUNS is not handled here: its own job's replay reaches it
+     * and forwards the warning with the rest of its events.
+     *
+     * @param  list<string>  $skipped  nodes this advance settled as skipped
+     * @param  array<string,array{status:string,ports:list<string>}>  $state
+     */
+    private function warnAboutUndeliveredEdges(
+        FancyFlowManager $flow,
+        FlowGraph $graph,
+        array $skipped,
+        array $state,
+        NodeKindRegistry $kinds,
+    ): void {
+        if ($skipped === []) {
+            return;
+        }
+
+        $portValues = [];
+        $completed = [];
+        foreach ($state as $nodeId => $entry) {
+            if ($entry['status'] !== WorkflowRunNode::COMPLETED) {
+                continue;
+            }
+            $completed[(string) $nodeId] = true;
+            foreach ($entry['ports'] as $port) {
+                // Only the KEYS are read: which ports were published, in order.
+                $portValues[$nodeId.':'.$port] = true;
+            }
+        }
+
+        $nodesById = [];
+        foreach ($graph->nodes as $node) {
+            $nodesById[$node->id] = $node;
+        }
+
+        foreach ($skipped as $nodeId) {
+            $target = $nodesById[$nodeId] ?? null;
+            if ($target === null) {
+                continue;
+            }
+
+            $incoming = array_values(array_filter($graph->edges, static fn ($edge): bool => $edge->target === $nodeId));
+
+            foreach (UndeliveredEdges::warnings($target, $incoming, $portValues, $completed, $nodesById, $kinds) as $warning) {
+                $flow->emit($this->runKey, $warning);
+            }
+        }
     }
 
     /** @param array<string,mixed> $outputs */

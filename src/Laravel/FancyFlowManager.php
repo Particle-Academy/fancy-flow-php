@@ -14,6 +14,7 @@ use FancyFlow\Laravel\Events\NodeOutput;
 use FancyFlow\Laravel\Events\NodeStatusChanged;
 use FancyFlow\Laravel\Events\WorkflowFailed;
 use FancyFlow\Laravel\Events\WorkflowFinished;
+use FancyFlow\Laravel\Events\WorkflowLog;
 use FancyFlow\Laravel\Events\WorkflowStarted;
 use FancyFlow\NodeKindRegistry;
 use FancyFlow\Registry\NodeKind;
@@ -296,6 +297,20 @@ final class FancyFlowManager
     }
 
     /**
+     * Deliver one engine event for `$runId` to Laravel, exactly as a run would.
+     *
+     * For the driver's own announcements -- things the ENGINE concludes but no
+     * replay can forward. The `per_node` driver uses it for the undelivered-edge
+     * warning about a node it has just recorded as skipped: that node never gets
+     * a job, so the warning has no replay of its own to travel in. Going through
+     * the same bridge keeps `fancy-flow.events` meaning what it says.
+     */
+    public function emit(string $runId, RunEvent $event): void
+    {
+        ($this->bridge($runId, null))($event);
+    }
+
+    /**
      * Wrap the caller's onEvent so each RunEvent also fires the matching Laravel
      * event. WorkflowFinished/Failed are dispatched from {@see run()} instead (they
      * carry the full outputs, which the stream event does not).
@@ -334,6 +349,13 @@ final class FancyFlowManager
                 // one a Laravel app runs workflows on.
                 RunEvent::NODE_MESSAGE => $dispatch->dispatch(
                     new NodeMessage($runId, (string) $event->nodeId, (string) $event->phase, (string) $event->message),
+                ),
+                // The run's log -- including the warnings for a graph that runs
+                // and delivers nothing. Missing for the same reason NODE_MESSAGE
+                // was: emitted by the engine, visible to an in-process $onEvent,
+                // and dropped here before any queued run's host could see it.
+                RunEvent::LOG => $dispatch->dispatch(
+                    new WorkflowLog($runId, (string) $event->level, (string) $event->message, $event->nodeId, $event->detail),
                 ),
                 default => null,
             };

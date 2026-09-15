@@ -149,8 +149,12 @@ final class NodeClaims
      *
      * Written with `insertOrIgnore` because skips are computed, not claimed: a
      * concurrent advance may have recorded the same one already.
+     *
+     * Returns whether THIS call settled it. Anything announced about a skip --
+     * the undelivered-edge warning, today -- keys on that, so two advances
+     * racing to the same conclusion say it once.
      */
-    public static function skip(string $runKey, string $nodeId): void
+    public static function skip(string $runKey, string $nodeId): bool
     {
         $now = Carbon::now();
 
@@ -164,15 +168,17 @@ final class NodeClaims
             'completed_at' => $now,
         ]);
 
-        if ($inserted === 0) {
-            // Already there. A node that genuinely ran outranks a computed skip,
-            // so only an unsettled row is overwritten.
-            WorkflowRunNode::query()
-                ->where('run_key', $runKey)
-                ->where('node_id', $nodeId)
-                ->whereNotIn('status', WorkflowRunNode::SETTLED)
-                ->update(['status' => WorkflowRunNode::SKIPPED, 'completed_at' => $now, 'updated_at' => $now]);
+        if ($inserted > 0) {
+            return true;
         }
+
+        // Already there. A node that genuinely ran outranks a computed skip,
+        // so only an unsettled row is overwritten.
+        return WorkflowRunNode::query()
+            ->where('run_key', $runKey)
+            ->where('node_id', $nodeId)
+            ->whereNotIn('status', WorkflowRunNode::SETTLED)
+            ->update(['status' => WorkflowRunNode::SKIPPED, 'completed_at' => $now, 'updated_at' => $now]) > 0;
     }
 
     /**

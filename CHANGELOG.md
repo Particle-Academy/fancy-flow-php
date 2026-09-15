@@ -10,8 +10,44 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.53.0 — 2026-09-14
+
+### Fixed
+
+- **A Laravel app now receives the run's log, including both warnings for a
+  graph that delivers nothing.** The engine has always emitted `log` events,
+  among them the undelivered-edge and unresolved-route warnings pinned by
+  fancy-conformance `flow/run-diagnostics`. But `FancyFlowManager`'s event
+  bridge sent them to `default => null`. An in-process `$onEvent` saw them. A
+  queued run, the only kind a Laravel app runs, delivered none on either driver.
+  They now arrive as the new `FancyFlow\Laravel\Events\WorkflowLog`
+  (`runId`, `level`, `message`, `nodeId`, `detail`), the same fix `NodeMessage`
+  got one arm over.
+- **The `per_node` driver no longer loses the undelivered-edge warning for a
+  skipped target.** Each node job replays the graph and forwards only its own
+  node's events. A target whose only inbound edge could never deliver is
+  SKIPPED and never gets a job, so its warning was emitted inside another
+  node's replay and filtered out on every run. `AdvanceWorkflowJob` now asks
+  the engine's rule when it records the skip, from the ports the claim rows
+  stored off the engine's `node-output` events, and announces it once. A target
+  that runs still gets its warning from its own job, as before.
+
+  The rule is now one class, `FancyFlow\Engine\UndeliveredEdges`, used by both
+  `FlowRunner` and the driver. `tests/Durable` runs the whole
+  `flow/run-diagnostics` table through both queue drivers and expects the same
+  goldens as the in-process run. Without the bridge arm both drivers fail all
+  six warning rows; without the skip-time announcement `per_node` fails the
+  three skipped-target rows.
+
+  **What you must do:** nothing. To show these warnings, listen for
+  `WorkflowLog` where `level === 'warn'` and read `detail`.
+
 ### Added
 
+- `FancyFlowManager::emit(string $runId, RunEvent $event)` delivers one engine
+  event to Laravel through the same bridge a run uses, honouring
+  `fancy-flow.events`. It is how the driver announces what no replay can
+  forward.
 - **The `flow/run-diagnostics` conformance table runs here** (fancy-conformance
   0.24.0, `tests/Parity/RunDiagnosticsConformanceTest.php`). It pins this
   runtime's two run-time warnings, the undelivered edge and the route taken on
@@ -22,6 +58,9 @@ upgrading.
 
 ### Changed
 
+- `NodeClaims::skip()` returns whether this call settled the node (it returned
+  nothing before). This is internal to the `per_node` driver, and it is what
+  keeps two advances that compute the same skip from announcing it twice.
 - **The tag workflow is now `.github/workflows/publish.yml`, named `Publish`**
   (it was `release-gate.yml`, "Release gate"). Every Particle-Academy package
   publishes from that file under that name. What it does is unchanged: on a
