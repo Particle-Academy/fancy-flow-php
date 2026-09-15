@@ -10,6 +10,16 @@ upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- **The `flow/run-diagnostics` conformance table runs here** (fancy-conformance
+  0.24.0, `tests/Parity/RunDiagnosticsConformanceTest.php`). It pins this
+  runtime's two run-time warnings, the undelivered edge and the route taken on
+  an unresolved path, with exact messages and structured detail, so the Node,
+  Python and Rust engines can be held to them (fancy-flow#17). Its goldens came
+  from this runtime, and all 14 rows pass. The `fancy-conformance` dev pin moves
+  from 0.23 to 0.24. No runtime code changed, so there is nothing to do.
+
 ### Changed
 
 - **The tag workflow is now `.github/workflows/publish.yml`, named `Publish`**
