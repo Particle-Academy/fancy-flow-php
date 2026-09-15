@@ -129,3 +129,31 @@ it('carries the registry down to a grandchild, not only one level', function () 
     expect($result->ok)->toBeTrue();
     expect($ran)->toBe(['deep']);
 });
+
+it('does not hand a node-id binding to a child graph node that merely shares the id', function () {
+    // A node-id binding is addressed to a node OF THE GRAPH it was bound for.
+    // The per_node driver's replay binds a fence to every parent node it does
+    // not own, by id -- and the child inherited the whole registry, so a child
+    // node that happened to share an id with a parent node ran the parent's
+    // fence. Before 0.53.1 the fence aborted, and the subflow failed loudly;
+    // after it, the fence publishes a dead port, and the subflow SUCCEEDED with
+    // the child's work silently missing.
+    $ran = [];
+    $registry = Builtin::executors();
+    $registry->bind('host_kind', function () use (&$ran) {
+        $ran[] = 'host';
+
+        return 'from-child';
+    });
+
+    $fenced = $registry->fork();
+    $fenced->bindNode('c1', static fn () => ['__port' => 'fancy-flow:fenced', 'value' => null]);
+
+    Capabilities::setWorkflowResolver(inheritResolver(['child' => hostKindGraph('c1')]));
+
+    $result = (new FlowRunner())->run(subflowParent(), $fenced);
+
+    expect($ran)->toBe(['host']);
+    expect($result->ok)->toBeTrue();
+    expect(json_encode($result->outputs['sub'] ?? null))->toContain('from-child');
+});

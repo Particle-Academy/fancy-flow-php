@@ -189,6 +189,26 @@ final class ExecutorRegistry
         return $copy;
     }
 
+    /**
+     * The same registry, minus its node-id bindings -- what a CHILD graph runs with.
+     *
+     * A node-id binding is addressed to a node of the graph it was bound for.
+     * A subflow's child is a different graph whose node ids are its own, so
+     * inheriting those bindings handed a parent's binding to whichever child node
+     * happened to share the id. The per_node driver's replay binds a fence to
+     * every parent node it does not own, by id: a child node named like any of
+     * them ran the fence, and since fences stopped aborting (0.53.1) the subflow
+     * succeeded with that child node's work silently missing. Kind bindings and
+     * the `*` fallback still carry down, so a host kind resolves at every depth.
+     */
+    public function withoutNodeBindings(): self
+    {
+        $copy = $this->fork();
+        $copy->byNode = [];
+
+        return $copy;
+    }
+
     /** Alias-aware: true when a binding exists under ANY id this kind answers to. */
     public function hasKind(string $kind): bool
     {

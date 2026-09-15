@@ -161,7 +161,11 @@ final class SubflowExecutor implements NodeExecutor
             // host kind resolves at every depth. An explicitly injected
             // registry still wins for a caller that constructed this executor
             // deliberately; the bare builtins remain only as the last resort.
-            $ctx->executors ?? $this->executors ?? Builtin::executors($this->deps),
+            //
+            // Inherited WITHOUT its node-id bindings: those name nodes of the
+            // parent graph, and a child node that shares an id is not that node.
+            // See ExecutorRegistry::withoutNodeBindings().
+            $ctx->executors?->withoutNodeBindings() ?? $this->executors ?? Builtin::executors($this->deps),
             $forward,
             new RunOptions(
                 initialInputs: $this->childInputs($config, $child, $ctx->inputs),

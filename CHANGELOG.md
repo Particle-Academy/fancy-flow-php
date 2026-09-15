@@ -10,6 +10,33 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.53.2 — 2026-09-14
+
+### Fixed
+
+- **A subflow's child no longer receives the parent's node-id bindings.**
+  `SubflowExecutor` ran the child with the parent's executor registry, node-id
+  bindings included, so a child node that shared an id with a parent node ran
+  the executor bound to the parent's node. The per_node driver binds a fence to
+  every parent node its job does not own, by id. Before 0.53.1 that fence
+  aborted, and such a subflow failed loudly. **In 0.53.1 the fence stopped
+  aborting, so the subflow succeeded with that child node's work silently
+  missing.** The child now inherits `ExecutorRegistry::withoutNodeBindings()`:
+  kind bindings and the `*` fallback still carry down, so a host kind resolves
+  at every depth. Pinned by `SubflowRegistryInheritanceTest`: "does not hand a
+  node-id binding to a child graph node that merely shares the id", which
+  failed before this change. Found by the TypeScript twin's port of 0.53.1.
+
+  **What you must do:** take 0.53.2 if you are on 0.53.1 and use `subflow` under
+  `per_node`. A run on 0.53.1 whose child graph reuses a parent node's id may
+  have completed without that child node running. The same thing applied to a
+  host `bindNode()` on a parent node id before 0.53.1; the child now never
+  sees it.
+
+### Added
+
+- `ExecutorRegistry::withoutNodeBindings()`.
+
 ## 0.53.1 — 2026-09-14
 
 ### Fixed
