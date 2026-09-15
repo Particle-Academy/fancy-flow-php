@@ -93,8 +93,9 @@ return [
     |   "per_node"  one job per node. Each node's output is written as it
     |               finishes, claimed through a unique constraint so two workers
     |               can never run the same node. A killed worker loses at most
-    |               the node that was in flight; independent branches run in
-    |               parallel on separate workers; retries become per node, so a
+    |               the node that was in flight; a run's nodes go out one at a
+    |               time unless `max_concurrent` allows more (below); retries
+    |               become per node, so a
     |               kind declaring `sideEffects: unsafe-to-replay` gets exactly
     |               one attempt while a flaky HTTP node can have several.
     |

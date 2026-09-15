@@ -10,6 +10,13 @@ upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `per_node` description in `config/fancy-flow.php` still said
+  independent branches run in parallel on separate workers.** 0.54.0 made one
+  node at a time the default and corrected the `max_concurrent` comment beneath
+  it, but missed this line. Documentation only.
+
 ## 0.54.0 — 2026-09-14
 
 **BREAKING: a queued (`per_node`) run now hands the queue ONE node at a time.**
