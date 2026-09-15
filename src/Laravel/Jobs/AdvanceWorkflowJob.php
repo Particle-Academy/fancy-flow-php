@@ -12,6 +12,7 @@ use FancyFlow\Laravel\Events\WorkflowStarted;
 use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Models\WorkflowRunNode;
+use FancyFlow\Laravel\Runs\DispatchLimit;
 use FancyFlow\Laravel\Runs\Frontier;
 use FancyFlow\Laravel\Runs\GraphReplay;
 use FancyFlow\Laravel\Runs\NodeClaims;
@@ -161,7 +162,8 @@ final class AdvanceWorkflowJob implements ShouldQueue
         $run->forceFill(['node_outputs' => $outputs])->save();
 
         if ($frontier['ready'] !== []) {
-            // Dispatch at most as many as the run's concurrency budget allows.
+            // Dispatch at most as many as the run's concurrency budget allows --
+            // ONE by default: a node's successor goes out only once it settles.
             //
             // The budget is measured against work ALREADY IN FLIGHT, not against
             // the size of this batch, and that distinction is the whole
@@ -391,11 +393,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
     /**
      * The slice of the ready frontier this run may dispatch right now.
      *
-     * Null / absent / <= 0 means unlimited, which is what this package has
-     * always done: the whole frontier goes out at once. A limit of 0 is treated
-     * as unlimited rather than honoured, because honouring it would deadlock the
-     * run with no node able to start and nothing to re-trigger an advance -- a
-     * config typo should not be a way to hang a workflow forever.
+     * Serial unless the run or the host asked for more: see {@see DispatchLimit}.
      *
      * @param  array<string,array{status:string,ports:list<string>}>  $state
      * @param  list<string>  $ready
@@ -403,25 +401,11 @@ final class AdvanceWorkflowJob implements ShouldQueue
      */
     private function withinBudget(WorkflowRun $run, array $state, array $ready): array
     {
-        $limit = $run->max_concurrent ?? config('fancy-flow.queue.max_concurrent');
-        $limit = is_numeric($limit) ? (int) $limit : null;
-
-        if ($limit === null || $limit <= 0) {
-            return $ready;
-        }
-
-        // PAUSED is deliberately NOT counted. A human gate holds no worker --
-        // RunNodeJob records the pause and returns -- so a run parked on an
-        // approval would otherwise consume its whole budget indefinitely and
-        // every parallel branch would stop dead behind a person.
-        $inFlight = 0;
-        foreach ($state as $entry) {
-            if ($entry['status'] === WorkflowRunNode::CLAIMED) {
-                $inFlight++;
-            }
-        }
-
-        return array_slice($ready, 0, max(0, $limit - $inFlight));
+        return DispatchLimit::select(
+            $ready,
+            $state,
+            DispatchLimit::resolve($run->max_concurrent, config('fancy-flow.queue.max_concurrent')),
+        );
     }
 
 }

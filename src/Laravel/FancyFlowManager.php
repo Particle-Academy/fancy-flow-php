@@ -160,17 +160,19 @@ final class FancyFlowManager
          */
         array $props = [],
         /**
-         * How many of this run's nodes may be in flight at once, under the
-         * `per_node` driver. Null falls back to `fancy-flow.queue.max_concurrent`,
-         * which itself defaults to null for unlimited -- today's behaviour.
+         * How many of this run's nodes may be held at once, under the `per_node`
+         * driver. Null inherits `fancy-flow.queue.max_concurrent`, which is
+         * SERIAL unless the host set it: one node at a time, the next dispatched
+         * only once the previous has settled, in the graph's declaration order.
          *
-         * `1` runs the graph serially: the next node is dispatched only once the
-         * previous has settled. That is the difference between one `llm_call` in
-         * flight and N when several become ready together, and it makes "what ran,
-         * in what order" the same answer on every run of the same graph.
+         * `N` allows up to N. {@see \FancyFlow\Laravel\Runs\DispatchLimit::UNLIMITED}
+         * dispatches the whole ready frontier -- the opt-in to parallel branches.
+         * Anything negative is refused here rather than on a worker.
          */
         ?int $maxConcurrent = null,
     ): \FancyFlow\Laravel\Models\WorkflowRun {
+        \FancyFlow\Laravel\Runs\DispatchLimit::assertValid($maxConcurrent);
+
         $run = new \FancyFlow\Laravel\Models\WorkflowRun();
         $run->forceFill([
             'run_key' => self::newRunId(),

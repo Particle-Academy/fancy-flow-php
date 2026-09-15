@@ -10,6 +10,7 @@ use FancyFlow\Laravel\Jobs\AdvanceWorkflowJob;
 use FancyFlow\Laravel\Jobs\RunNodeJob;
 use FancyFlow\Laravel\Jobs\RunWorkflowJob;
 use FancyFlow\Laravel\Runs\Frontier;
+use FancyFlow\Laravel\Runs\DispatchLimit;
 use FancyFlow\Laravel\Runs\NodeClaims;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Models\WorkflowRunNode;
@@ -397,6 +398,8 @@ it('gives an unsafe-to-replay node exactly one attempt, whatever tries says', fu
             [pnEdge('e1', 't', 'pr'), pnEdge('e2', 't', 'a')],
         ),
         ['t' => []],
+        // PARALLEL, opted into: both successors have to be queued together to compare their attempts.
+        ['max_concurrent' => DispatchLimit::UNLIMITED],
     );
 
     RunWorkflowJob::enqueue($run);
@@ -501,6 +504,8 @@ it('dispatches a job per branch on fan-out, and runs the fan-in once after both'
             ],
         ),
         ['t' => []],
+        // PARALLEL, opted into: a job per branch is what parallel dispatch means.
+        ['max_concurrent' => DispatchLimit::UNLIMITED],
     );
 
     RunWorkflowJob::enqueue($run);
@@ -856,6 +861,8 @@ it('refuses to drain a fan-out, so parallelism is never traded for latency', fun
             [pnEdge('e1', 't', 'left'), pnEdge('e2', 't', 'right')],
         ),
         ['t' => []],
+        // PARALLEL, opted into: under serial a fan-out is one node at a time by definition, so draining the last sibling trades nothing.
+        ['max_concurrent' => DispatchLimit::UNLIMITED],
     );
 
     RunWorkflowJob::enqueue($run);
@@ -1140,14 +1147,19 @@ it('runs a fan-out in a deterministic order when serialised', function () {
     expect(PnLog::$ran)->toBe(['a', 'b', 'c']);
 });
 
-it('leaves an unlimited run dispatching the whole frontier', function () {
-    // The compatibility guard. Unset must mean today's behaviour exactly, or
-    // this feature becomes a silent throughput regression for every existing
-    // consumer.
-    PnLog::$ran = [];
+it('dispatches ONE node at a time when nothing sets a limit: serial is the default', function () {
+    // fancy-flow-php#17. An unset limit used to dispatch the whole frontier, and
+    // this test used to pin that as the compatibility guard. The owner of the
+    // estate's largest consumer ruled the other way: a node's successor is
+    // enqueued only once that node completes, in a deterministic order, and
+    // parallel dispatch is something a host asks for.
+    //
+    // Asserted on what reaches the QUEUE, pumping one node at a time: counting
+    // nodes that ran would pass for a run that dispatched all three at once.
     pnRecorder();
+    Queue::fake();
 
-    $run = FancyFlow::dispatch(
+    $run = pnRun(
         pnSchema(
             [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec'), pnNode('c', 'rec')],
             [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b'), pnEdge('e3', 't', 'c')],
@@ -1155,10 +1167,134 @@ it('leaves an unlimited run dispatching the whole frontier', function () {
         ['t' => ['n' => 1]],
     );
 
-    $run->refresh();
+    RunWorkflowJob::enqueue($run);
+    pnPump(maxNodes: 1); // the trigger
 
-    expect($run->status)->toBe(WorkflowRun::COMPLETED);
-    expect(PnLog::$ran)->toHaveCount(3);
+    expect(Queue::pushed(RunNodeJob::class)->map(fn (RunNodeJob $j) => $j->nodeId)->values()->all())
+        ->toBe(['t', 'a'], 'the trigger settled and more than its first successor went out');
+
+    pnPump();
+
+    expect(PnLog::$ran)->toBe(['a', 'b', 'c']);
+    expect($run->fresh()->status)->toBe(WorkflowRun::COMPLETED);
+});
+
+it('is serial for a host whose PUBLISHED config still reads an unset env var', function () {
+    // The upgrade path that matters. A host that published config/fancy-flow.php
+    // before this release carries `'max_concurrent' => env('FANCY_FLOW_MAX_CONCURRENT')`,
+    // which is null -- the value that used to mean unlimited. A default that only
+    // applied to hosts who never published the config would not be a default.
+    config()->set('fancy-flow.queue.max_concurrent', null);
+    pnRecorder();
+    Queue::fake();
+
+    $run = pnRun(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b')],
+        ),
+        ['t' => []],
+    );
+
+    RunWorkflowJob::enqueue($run);
+    pnPump(maxNodes: 1);
+
+    expect(Queue::pushed(RunNodeJob::class)->map(fn (RunNodeJob $j) => $j->nodeId)->values()->all())->toBe(['t', 'a']);
+});
+
+it('dispatches the whole frontier for a host that ASKS for it', function (mixed $configured) {
+    // The opt-in, every spelling. Without this the serial tests above pass just
+    // as well against a driver that can no longer run branches in parallel at all.
+    config()->set('fancy-flow.queue.max_concurrent', $configured);
+    pnRecorder();
+    Queue::fake();
+
+    $run = pnRun(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec'), pnNode('c', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b'), pnEdge('e3', 't', 'c')],
+        ),
+        ['t' => []],
+    );
+
+    RunWorkflowJob::enqueue($run);
+    pnPump(maxNodes: 1);
+
+    expect(Queue::pushed(RunNodeJob::class)->map(fn (RunNodeJob $j) => $j->nodeId)->values()->all())->toBe(['t', 'a', 'b', 'c']);
+})->with([
+    'zero' => [0],
+    'the string "0" an env var gives' => ['0'],
+    '"unlimited"' => ['unlimited'],
+]);
+
+it('lets one run opt into parallel while the host stays serial', function () {
+    pnRecorder();
+    Queue::fake();
+
+    $run = FancyFlow::dispatch(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b')],
+        ),
+        ['t' => []],
+        maxConcurrent: DispatchLimit::UNLIMITED,
+    );
+
+    pnPump(maxNodes: 1);
+
+    expect($run->fresh()->max_concurrent)->toBe(0);
+    expect(Queue::pushed(RunNodeJob::class)->map(fn (RunNodeJob $j) => $j->nodeId)->values()->all())->toBe(['t', 'a', 'b']);
+});
+
+it('refuses a limit that is neither a limit nor unlimited, by name', function () {
+    // A negative number used to mean unlimited. Under a serial default a typo
+    // that silently turned a run parallel is the failure to avoid, so it is
+    // refused where it is set.
+    expect(fn () => FancyFlow::dispatch(
+        pnSchema([pnNode('t', 'manual_trigger')], []),
+        [],
+        maxConcurrent: -1,
+    ))->toThrow(InvalidArgumentException::class, 'maxConcurrent must be a positive integer');
+
+    expect(fn () => DispatchLimit::resolve(null, 'lots'))
+        ->toThrow(InvalidArgumentException::class, 'fancy-flow.queue.max_concurrent');
+});
+
+it('keeps a paused node\'s slot, so nothing queues alongside a gate', function () {
+    // A person is deciding at `gate`; `b` is ready. Serial means `b` waits.
+    //
+    // On this driver a pause parks the whole run, so the advance returns before
+    // the budget is even asked -- which is why this sets the run RUNNING with a
+    // paused claim out of band: it asserts the budget's own rule, which the TS and
+    // Python coordinators (where a pause does not park the run) depend on.
+    pnRecorder();
+
+    $run = pnRun(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('gate', 'rec'), pnNode('b', 'rec')],
+            [pnEdge('e1', 't', 'gate'), pnEdge('e2', 't', 'b')],
+        ),
+        ['t' => []],
+        ['status' => WorkflowRun::RUNNING, 'attempts' => 1],
+    );
+
+    NodeClaims::claim($run->run_key, 't', 'w0');
+    NodeClaims::complete($run->run_key, 't', null, ['out']);
+    NodeClaims::claim($run->run_key, 'gate', 'w1');
+    NodeClaims::pause($run->run_key, 'gate');
+
+    Queue::fake();
+    app()->call([new AdvanceWorkflowJob($run->run_key), 'handle']);
+
+    Queue::assertNotPushed(RunNodeJob::class);
+
+    // CONTROL: the same state under an explicit parallel limit does dispatch `b`,
+    // so the assertion above is not passing over a setup that could never
+    // dispatch anything.
+    $run->forceFill(['max_concurrent' => DispatchLimit::UNLIMITED])->save();
+    app()->call([new AdvanceWorkflowJob($run->run_key), 'handle']);
+
+    Queue::assertPushed(RunNodeJob::class, fn (RunNodeJob $job) => $job->nodeId === 'b');
 });
 
 it('counts work ALREADY IN FLIGHT, not just the size of one batch', function () {
@@ -1266,6 +1402,8 @@ it('runs a node whose EARLIER sibling has not finished yet, instead of skipping 
             [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b')],
         ),
         ['t' => []],
+        // PARALLEL, opted into: siblings in flight together only happen when a host asks for them.
+        ['max_concurrent' => DispatchLimit::UNLIMITED],
     );
 
     RunWorkflowJob::enqueue($run);

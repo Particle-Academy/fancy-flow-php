@@ -84,12 +84,21 @@ Durable runs are carried by one of two drivers. **Every entry point routes
 through `RunWorkflowJob::enqueue()`** — keep it that way, or switching drivers
 stops being a config change.
 
-- `single` (default) — `Jobs\RunWorkflowJob`. One job for the whole graph; the
+- `single` — `Jobs\RunWorkflowJob`. One job for the whole graph; the
   `node_outputs` checkpoint is written once, when it returns.
-- `per_node` — `Jobs\AdvanceWorkflowJob` (compute the ready frontier, dispatch
-  it, settle the run) + `Jobs\RunNodeJob` (claim one node, run it, checkpoint
-  it). Supported by `Runs\{NodeClaims, Frontier, GraphReplay, NodeRetryPolicy,
+- `per_node` (default since 0.11) — `Jobs\AdvanceWorkflowJob` (compute the ready
+  frontier, dispatch what `Runs\DispatchLimit` allows, settle the run) +
+  `Jobs\RunNodeJob` (claim one node, run it, checkpoint it). Supported by
+  `Runs\{NodeClaims, Frontier, DispatchLimit, GraphReplay, NodeRetryPolicy,
   RunSetup}` and the `workflow_run_nodes` table.
+
+**`per_node` dispatches ONE node of a run at a time by default (0.54.0,
+fancy-flow-php#17, the owner's ruling).** `DispatchLimit::select` takes the first
+`limit - held` ready nodes in declaration order, where held is CLAIMED + PAUSED.
+Parallel is `max_concurrent` N, `0` or `"unlimited"`. Unset means serial on
+purpose, including a published config whose `env()` returns null — do not "fix"
+that back to unlimited. The rule is shared with the TS and Python coordinators
+through `flow/durable-dispatch`; change it there first.
 
 Three rules hold this together, and each exists because the alternative fails
 silently:

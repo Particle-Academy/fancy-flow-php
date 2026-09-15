@@ -10,6 +10,71 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.54.0 — 2026-09-14
+
+**BREAKING: a queued (`per_node`) run now hands the queue ONE node at a time.**
+fancy-flow-php#17, on the ruling of the owner of the estate's largest consumer: a
+node's successor is dispatched only once that node has settled, in the graph's
+own declaration order, and parallel dispatch of a ready frontier is something a
+host asks for.
+
+**What you must do:**
+- **Nothing, if your graphs are chains or you already set `max_concurrent: 1`.**
+  The result of a run is unchanged; only when its nodes reach the queue changes.
+- **If you rely on branches running in parallel**, ask for it. Per host:
+  `FANCY_FLOW_MAX_CONCURRENT=unlimited` (or `0`, or a cap such as `4`). Per run:
+  `FancyFlow::dispatch(..., maxConcurrent: DispatchLimit::UNLIMITED)`.
+- **If you published `config/fancy-flow.php`**, you are serial too. Its
+  `'max_concurrent' => env('FANCY_FLOW_MAX_CONCURRENT')` reads null when the env
+  var is unset, and null used to mean unlimited. That is deliberate: a default
+  that skipped every host with a published config would not be a default.
+- **If you set a NEGATIVE limit**, it is now refused where it is set, with a
+  message naming the key. It used to mean unlimited. Under a serial default, a
+  typo that silently turned runs parallel is the failure to avoid.
+
+### Changed
+
+- **Serial by default.** `FancyFlow\Laravel\Runs\DispatchLimit` holds the rule
+  `AdvanceWorkflowJob` now calls. It takes the first `limit - held` ready nodes in
+  declaration order. `max_concurrent` unset or null means 1; `N` allows up to N;
+  `0` or `"unlimited"` dispatches the whole frontier.
+- **A paused node counts as held.** A node parked on a person keeps its slot, so
+  a gate never opens a gap for a sibling to queue alongside it. On this driver a
+  pause already parks the whole run, so nothing observable changes here. The rule
+  is stated so it cannot come apart from the TypeScript and Python coordinators,
+  where a pause does not park the run.
+- `FancyFlow::dispatch(maxConcurrent:)` validates its value at dispatch time,
+  rather than on a worker's first advance.
+- **Dev: `particle-academy/fancy-conformance` 0.25**, for the new
+  `flow/durable-dispatch` table.
+
+### Added
+
+- **`tests/Parity/DurableDispatchConformanceTest.php`** runs `flow/durable-dispatch`
+  (14 rows) against this side's own `Frontier` and `DispatchLimit`. This runtime
+  produced the goldens. The table's discrimination probe shows it fails a
+  dispatcher that does not count a paused node as held, one that caps per batch
+  instead of against held work, the old unlimited default, and breadth-first order.
+- Tests pinning the default through the real driver:
+  - unset means serial, and so does a published config reading null;
+  - `0`, `"0"` and `"unlimited"` each dispatch the whole frontier;
+  - one run can opt into parallel while the host stays serial;
+  - a negative limit is refused;
+  - a paused claim holds the only slot, with a control proving the same state
+    dispatches under an explicit parallel limit.
+
+  The first, second and last FAIL against 0.53.2.
+- Four existing tests describe parallel behaviour (a job per fan-out branch, a
+  drain that refuses a fan-out, siblings racing, per-node attempts compared across
+  siblings queued together). They now opt into `max_concurrent: UNLIMITED`
+  explicitly, each saying why.
+
+### Fixed
+
+- **The config comment and README said `single` was the default queue driver.**
+  `per_node` has been the default since 0.11, as the config value itself shows.
+  Both now say so, and the README's driver table describes serial dispatch.
+
 ## 0.53.2 — 2026-09-14
 
 ### Fixed

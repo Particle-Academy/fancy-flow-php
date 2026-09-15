@@ -98,9 +98,9 @@ return [
     |               kind declaring `sideEffects: unsafe-to-replay` gets exactly
     |               one attempt while a flaky HTTP node can have several.
     |
-    | "single" remains the default so upgrading changes nothing. Switching is a
-    | config change: every entry point routes through RunWorkflowJob::enqueue().
-    | "per_node" needs the workflow_run_nodes migration.
+    | "per_node" is the default. "single" is a config change away: every entry
+    | point routes through RunWorkflowJob::enqueue(). "per_node" needs the
+    | workflow_run_nodes migration.
     */
     'queue' => [
         'driver' => env('FANCY_FLOW_QUEUE_DRIVER', 'per_node'),
@@ -112,20 +112,23 @@ return [
         'tries' => 1,
         'backoff' => 0,
 
-        // How many of ONE RUN's nodes may be in flight at once, for "per_node"
-        // only. Null is unlimited: the whole ready frontier is dispatched, which
-        // is what this package has always done.
+        // How many of ONE RUN's nodes may be held at once, for "per_node" only.
         //
-        // `1` serialises a run -- the next node is dispatched only once the
-        // previous has settled. Three reasons a consumer asks for it: several
-        // `llm_call` nodes becoming ready together fire concurrently at the same
-        // provider; a fanning frontier makes "what ran, in what order"
-        // non-deterministic between runs of the SAME graph; and two nodes
-        // writing the same record are ordered only by luck.
+        // UNSET IS SERIAL: one node of a run on the queue at a time, the next
+        // dispatched only once the previous has settled, in the graph's own
+        // declaration order. A node paused for a person keeps its slot.
         //
-        // Worker topology (one worker on the queue) achieves the same thing, but
-        // it is deployment-wide and stops being true the moment anyone scales
-        // the worker. A per-run override is `FancyFlow::dispatch(maxConcurrent:)`.
+        // `N` allows up to N at once. `0` or "unlimited" dispatches the whole
+        // ready frontier -- parallel branches, which a host has to ask for.
+        // Anything else is refused by name. See DispatchLimit.
+        //
+        // Serial is the default because several nodes of one run on the queue
+        // together is what ordering bugs need, "what ran, in what order" must
+        // be the same answer twice, and several `llm_call` nodes becoming ready
+        // together otherwise fire at the same provider at once. Worker topology
+        // (one worker) is not a substitute: it is deployment-wide and stops
+        // being true the moment anyone scales the worker. A per-run override is
+        // `FancyFlow::dispatch(maxConcurrent:)`.
         'max_concurrent' => env('FANCY_FLOW_MAX_CONCURRENT'),
 
         // Per-kind attempt overrides, for "per_node" only. Keyed by kind id

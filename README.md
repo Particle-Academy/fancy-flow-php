@@ -332,24 +332,44 @@ class Project extends Model { use HasWorkflows; } // $project->workflows()
 A run is carried on the queue by one of two drivers, selected with
 `fancy-flow.queue.driver`:
 
-| | `single` (default) | `per_node` |
+| | `single` | `per_node` (default) |
 |---|---|---|
 | Jobs per run | 1 | 1 per node, plus a bookkeeping job between them |
 | Checkpoint written | once, when the graph returns | as each node finishes |
 | Worker killed mid-run | re-runs every node completed since the last checkpoint | loses at most the node that was in flight |
-| Independent branches | sequential, in one process | parallel, on separate workers |
+| Independent branches | sequential, in one process | one node at a time by default; in parallel on separate workers when you ask |
 | `tries` | one setting for the whole graph | per node |
 
-`single` is what shipped through 0.9 and remains the default, so upgrading
-changes nothing. The reason to switch is that a checkpoint written *after* the
-whole graph returns is not written at all when the worker is killed — a timeout,
-a deploy, an OOM — and the retry then re-runs everything that had completed,
-including nodes that must not run twice:
+`per_node` has been the default since 0.11. `single` shipped through 0.10 and is
+still supported (`FANCY_FLOW_QUEUE_DRIVER=single`). The reason `per_node` won is
+that a checkpoint written *after* the whole graph returns is not written at all
+when the worker is killed — a timeout, a deploy, an OOM — and the retry then
+re-runs everything that had completed, including nodes that must not run twice.
+
+#### One node at a time, unless you ask
+
+Under `per_node`, **a run hands the queue one node at a time**: a node's
+successor is dispatched only once that node has settled, in the graph's own
+declaration order among whatever is ready. A node paused for a person keeps its
+place, so nothing queues alongside a human gate. Several `llm_call` nodes becoming
+ready together no longer fire at one provider at once, and "what ran, in what
+order" is the same answer on every run of the same graph.
+
+Parallel branches are something a host asks for, per host or per run:
 
 ```php
-// config/fancy-flow.php
-'queue' => ['driver' => 'per_node'],
+// config/fancy-flow.php -- up to 4 of a run's nodes at once, or "unlimited" (or 0)
+'queue' => ['max_concurrent' => 4],
+
+// one run, while the host stays serial
+FancyFlow::dispatch($schema, $inputs, maxConcurrent: DispatchLimit::UNLIMITED);
 ```
+
+Unset is serial, including in a config file published before 0.54.0 that still
+reads `env('FANCY_FLOW_MAX_CONCURRENT')`. A negative or non-numeric value is
+refused by name. `FancyFlow\Laravel\Runs\DispatchLimit` holds the rule, and the
+shared `flow/durable-dispatch` conformance table pins it on the TypeScript and
+Python coordinators too.
 
 It needs the `workflow_run_nodes` migration. `(run_key, node_id)` is unique
 there, and claiming a node is an insert against that constraint — so two workers
@@ -372,9 +392,9 @@ final class OpenPullRequestExecutor implements NodeExecutor { /* … */ }
 A queue round trip per node is real overhead, and for a chain of fast nodes it is
 most of the cost. `queue.drain_limit` lets one job keep going inline while the
 next step is unambiguous — a single ready successor, single-attempt, no human
-wait. Fan-out always dispatches, so parallelism is never traded away. It is off
-by default, because it trades a little of the durability the driver exists to
-provide.
+wait. Under a parallel limit a fan-out always dispatches, so parallelism is never
+traded away. It is off by default, because it trades a little of the durability
+the driver exists to provide.
 
 Per-node state is queryable: `$run->nodes()` returns the durable execution
 record for each node with its resolved `inputs`, `output`, status,
