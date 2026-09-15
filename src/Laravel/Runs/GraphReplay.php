@@ -7,6 +7,7 @@ namespace FancyFlow\Laravel\Runs;
 use FancyFlow\ExecutorRegistry;
 use FancyFlow\Laravel\FancyFlowManager;
 use FancyFlow\Runtime\ExecutionContext;
+use FancyFlow\Runtime\Port;
 use FancyFlow\Runtime\RunEvent;
 use FancyFlow\Runtime\RunOptions;
 use FancyFlow\Runtime\RunResult;
@@ -31,11 +32,26 @@ use FancyFlow\Schema\FlowGraph;
  *  - every node already completed is fed back as `resumeOutputs`, so the engine
  *    republishes it on the same ports and routes exactly as it did the first
  *    time;
- *  - every node EXCEPT the target is bound, by node id, to a boundary executor
- *    that aborts;
+ *  - every node EXCEPT the target is bound, by node id, to a FENCE that runs
+ *    nothing and publishes only a port no edge reads;
  *  - so the engine walks its own topological order, skips its own dead branches,
- *    collects the target's inputs its own way, runs the target — and stops at
- *    the next thing it would have run.
+ *    collects the target's inputs its own way, and runs the target.
+ *
+ * ## Why the fence does not stop the walk
+ *
+ * It used to abort the run. The target's own inputs never depend on a fenced
+ * node -- the frontier dispatches a node only once every source is settled, and
+ * settled sources are resumed, not fenced -- but an UNRELATED node can precede
+ * the target in topological order. Two siblings dispatched together are exactly
+ * that: when `b`'s job started while `a` was still running, the replay aborted
+ * at `a`, never reached `b`, and RunNodeJob read "the replay ended without
+ * running me" as "the engine decided I am unreachable". `b` was recorded
+ * skipped, never ran, and the run completed as a success. A queue with one
+ * worker, and the sync queue every test used, can never produce that order.
+ *
+ * Walking past fences makes that inference honest again: when the replay
+ * finishes without an output for the target, it is because the engine found
+ * every inbound edge dead.
  *
  * The target's output is `$result->outputs[$nodeId]`, and the ports it activated
  * arrive as the engine's own `node-output` events. Nothing about routing is
@@ -52,10 +68,18 @@ use FancyFlow\Schema\FlowGraph;
 final class GraphReplay
 {
     /**
-     * The abort reason the boundary executor uses. Not a failure: it is the
-     * engine telling us it reached a node this job is not responsible for.
+     * The abort reason a boundary used to report. Nothing aborts with it any
+     * more (see "Why the fence does not stop the walk"); {@see isBoundary()}
+     * still recognises it so a caller that checks for it keeps working.
      */
     public const BOUNDARY = 'fancy-flow:node-boundary';
+
+    /**
+     * The port a fenced node publishes on. No edge reads it, so everything
+     * downstream of a fenced node is dark in the replay -- which never matters to
+     * the target, whose sources are all settled.
+     */
+    public const FENCE_PORT = 'fancy-flow:fenced';
 
     /**
      * Replay `$graph` up to and through `$nodeId`.
@@ -75,9 +99,7 @@ final class GraphReplay
         string $runId,
         ?callable $onTargetContext = null,
     ): array {
-        $boundary = static function (ExecutionContext $ctx): never {
-            $ctx->abort(self::BOUNDARY);
-        };
+        $boundary = static fn (ExecutionContext $ctx): array => Port::only(self::FENCE_PORT);
 
         $fork = $executors->fork();
         foreach ($graph->nodes as $node) {

@@ -1243,3 +1243,47 @@ it('fails a run whose stored schema has no version, rather than completing an em
     expect($run->status)->toBe(WorkflowRun::FAILED);
     expect((string) $run->error)->toContain('Unsupported workflow schema version');
 });
+
+// ── sibling jobs out of order ──────────────────────────────────────────────
+
+it('runs a node whose EARLIER sibling has not finished yet, instead of skipping it', function () {
+    // Two nodes become ready together and are dispatched together. On real
+    // workers nothing orders them: `b`'s job can start while `a` is still
+    // running. `b`'s replay walks the engine's topological order, and `a` --
+    // unfinished, so not resumed -- came first. The fence used to ABORT the
+    // replay there, and RunNodeJob read "the replay ended without running me"
+    // as "the engine decided I am unreachable": `b` was recorded SKIPPED, never
+    // ran, and the run completed as a success with half its work missing.
+    //
+    // The sync queue always ran `a` to completion before `b`'s job existed, so
+    // no test could see it. This one runs `b`'s job first, on purpose.
+    pnRecorder();
+    Queue::fake();
+
+    $run = pnRun(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('a', 'rec'), pnNode('b', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b')],
+        ),
+        ['t' => []],
+    );
+
+    RunWorkflowJob::enqueue($run);
+    pnPump(maxNodes: 1); // `t`; its advance dispatches `a` and `b` together
+
+    $jobs = Queue::pushed(RunNodeJob::class)->values();
+    $b = $jobs->first(fn (RunNodeJob $job) => $job->nodeId === 'b');
+    expect($b)->not->toBeNull();
+
+    app()->call([$b, 'handle']);
+
+    expect(PnLog::$ran)->toBe(['b']);
+    expect($run->fresh()->nodes()->pluck('status', 'node_id')->all())->toMatchArray([
+        'b' => WorkflowRunNode::COMPLETED,
+    ]);
+
+    // The rest drains normally, and every node ran exactly once.
+    pnPump();
+    expect($run->fresh()->status)->toBe(WorkflowRun::COMPLETED);
+    expect(PnLog::$ran)->toEqualCanonicalizing(['a', 'b']);
+});

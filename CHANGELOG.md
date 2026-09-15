@@ -10,6 +10,34 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.53.1 — 2026-09-14
+
+### Fixed
+
+- **`per_node` no longer silently skips a node whose earlier sibling is still
+  running.** Nodes that become ready together are dispatched together, and on
+  real workers nothing orders their jobs. If `b`'s job started while `a` was
+  still running, `b`'s replay walked the engine's topological order and hit `a`
+  first. `a` was unfinished, so it was fenced, and the fence ABORTED the replay.
+  `RunNodeJob` read "the replay ended without running me" as "the engine decided
+  I am unreachable", so `b` was recorded skipped and never ran. Everything
+  downstream of `b` skipped with it, and the run completed as a success. The
+  sync queue, and a single worker, always finish `a` before `b`'s job exists,
+  so no test in this repository could produce that order.
+
+  A fence now runs nothing and publishes a port no edge reads
+  (`GraphReplay::FENCE_PORT`), and the replay walks on to the target. The
+  target's inputs are unaffected, because the frontier dispatches a node only
+  once every source is settled. Finishing without the target's output once again
+  means the engine found every inbound edge dead. Pinned by
+  `PerNodeRunTest`: "runs a node whose EARLIER sibling has not finished yet",
+  which runs `b`'s job first on purpose and failed before this change.
+
+  **What you must do:** nothing. If you run `per_node` with more than one queue
+  worker, a completed run from before this release may be missing nodes that
+  were recorded `skipped` while a sibling was still running. Check
+  `workflow_run_nodes` for skips of nodes that had a live inbound edge.
+
 ## 0.53.0 — 2026-09-14
 
 ### Fixed
