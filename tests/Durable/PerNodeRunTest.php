@@ -1287,3 +1287,30 @@ it('runs a node whose EARLIER sibling has not finished yet, instead of skipping 
     expect($run->fresh()->status)->toBe(WorkflowRun::COMPLETED);
     expect(PnLog::$ran)->toEqualCanonicalizing(['a', 'b']);
 });
+
+it('runs every node when siblings are DECLARED in a different order from their edges', function () {
+    // No second worker needed. The frontier dispatches ready nodes in the
+    // graph's declaration order; the engine's topological walk orders siblings
+    // by their edges. Declared (t, b, a) with edges (t→a, t→b), `b`'s job runs
+    // first on ONE worker -- and before 0.53.1 its replay aborted at `a`.
+    pnRecorder();
+    Queue::fake();
+
+    $run = pnRun(
+        pnSchema(
+            [pnNode('t', 'manual_trigger'), pnNode('b', 'rec'), pnNode('a', 'rec')],
+            [pnEdge('e1', 't', 'a'), pnEdge('e2', 't', 'b')],
+        ),
+        ['t' => []],
+    );
+
+    RunWorkflowJob::enqueue($run);
+    pnPump();
+
+    expect($run->fresh()->status)->toBe(WorkflowRun::COMPLETED);
+    expect(PnLog::$ran)->toEqualCanonicalizing(['a', 'b']);
+    expect($run->fresh()->nodes()->pluck('status', 'node_id')->all())->toMatchArray([
+        'a' => WorkflowRunNode::COMPLETED,
+        'b' => WorkflowRunNode::COMPLETED,
+    ]);
+});

@@ -25,6 +25,16 @@ upgrading.
   sync queue, and a single worker, always finish `a` before `b`'s job exists,
   so no test in this repository could produce that order.
 
+  **Correction, after release: one worker CAN produce it.** The frontier
+  dispatches ready nodes in the graph's DECLARATION order, while the engine's
+  topological walk orders siblings by their EDGES. A graph that declares
+  `(t, b, a)` with edges `(t→a, t→b)` runs `b`'s job first on a single worker
+  or the sync queue, and before 0.53.1 that skipped `b`. The fix is unchanged;
+  what was wrong is the claim above that only multi-worker queues were
+  affected. Pinned by `PerNodeRunTest`: "runs every node when siblings are
+  DECLARED in a different order from their edges", which fails on 0.53.0.
+  Found by the Python twin's port of this fix.
+
   A fence now runs nothing and publishes a port no edge reads
   (`GraphReplay::FENCE_PORT`), and the replay walks on to the target. The
   target's inputs are unaffected, because the frontier dispatches a node only
@@ -33,10 +43,11 @@ upgrading.
   `PerNodeRunTest`: "runs a node whose EARLIER sibling has not finished yet",
   which runs `b`'s job first on purpose and failed before this change.
 
-  **What you must do:** nothing. If you run `per_node` with more than one queue
-  worker, a completed run from before this release may be missing nodes that
-  were recorded `skipped` while a sibling was still running. Check
-  `workflow_run_nodes` for skips of nodes that had a live inbound edge.
+  **What you must do:** nothing to upgrade. If you ran `per_node` before this
+  release, a completed run may be missing nodes that were recorded `skipped`
+  while an earlier sibling was unfinished. That can happen on any number of
+  workers (see the correction). Check `workflow_run_nodes` for skips of nodes
+  that had a live inbound edge.
 
 ## 0.53.0 — 2026-09-14
 
