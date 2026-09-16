@@ -10,6 +10,46 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.57.1 — 2026-09-16
+
+### Fixed
+
+- **`WorkflowRun::awaitingForm()` no longer returns null for a gate inside a
+  `subflow`** (#22, reported by MOIC against 0.57.0). It looked `awaiting_node`
+  up in the RUN's own schema — which holds the parent's nodes and nothing else —
+  so a `user_input` or `human_approval` one level down was never found, and the
+  method returned null.
+
+  A host rendering from that got **an empty approval**: a person saw a modal
+  with no title and no fields. Worse, the caller could not tell "this run is not
+  awaiting anything" from "this run is awaiting something I could not describe",
+  because both are null.
+
+  It now falls back to `awaiting_detail` — the pause's own payload, built by the
+  executor from resolved config, which already carries the title and fields and
+  needs no node found first. The top-level path is unchanged; this is purely
+  additive for the case that previously failed. A pause carrying no detail at
+  all still returns null, because inventing a form would put an empty modal in
+  front of someone, which is the defect this fixes.
+
+  **What you must do:** nothing. If you worked around this by building the form
+  from `awaiting_detail` yourself, that remains correct and equivalent.
+
+### Known issue, NOT fixed — help wanted
+
+- **MOIC also reports that answering such a gate does not resume the run**
+  (#22). **I could not reproduce that half.** Four tests now cover it in
+  `tests/Durable/SubflowGateResumeTest.php` and all four pass:
+  `human_approval` and `user_input`, each on the `single` and `per_node`
+  drivers, parent `manual_trigger → subflow → output` over child
+  `manual_trigger → gate → output`. `approve()` and `submitInput()` both resume
+  to `COMPLETED`.
+
+  So either their setup differs from mine in a way I have not matched, or the
+  cause is elsewhere in the stack. The tests are committed so the behaviour is
+  pinned either way, and the issue stays open rather than being closed on the
+  strength of my failing to reproduce it.
+
 ## 0.57.0 — 2026-09-16
 
 ### Fixed

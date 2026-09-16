@@ -207,7 +207,21 @@ class WorkflowRun extends Model
         }
 
         if ($node === null) {
-            return null;
+            // THE NODE IS NOT ALWAYS IN THIS RUN'S SCHEMA, and returning null
+            // here meant a person saw an EMPTY approval (#22, reported by MOIC
+            // against 0.57.0).
+            //
+            // A gate inside a `subflow` lives in the CHILD graph; this run's
+            // schema holds the parent's nodes and nothing else. So the lookup
+            // above finds nothing for a perfectly valid pause — and the caller
+            // cannot tell "not awaiting anything" from "awaiting something I
+            // could not describe", because both are null.
+            //
+            // `awaiting_detail` is the pause's OWN payload: the executor built
+            // it from resolved config, so it already carries the title and
+            // fields and needs no node found first. It is the self-describing
+            // source and it is right here.
+            return $this->formFromDetail();
         }
 
         $registry = app(NodeKindRegistry::class);
@@ -221,6 +235,35 @@ class WorkflowRun extends Model
             'nodeId' => (string) $this->awaiting_node,
             'title' => $config['title'] ?? null,
             'fields' => $config['fields'] ?? [],
+        ];
+    }
+
+    /**
+     * The paused form built from the pause's own payload.
+     *
+     * Used when the awaiting node is not in this run's schema — a gate one
+     * level down, inside a `subflow`. The payload is what the executor emitted
+     * from its resolved config, so it is a better source than the graph in
+     * every respect except that it was not being read.
+     *
+     * Still null when there is no detail at all: a pause that described nothing
+     * genuinely has no form, and inventing one would put an empty modal in
+     * front of a person, which is the bug this method exists to stop.
+     *
+     * @return array{nodeId:string,title:mixed,fields:mixed}|null
+     */
+    private function formFromDetail(): ?array
+    {
+        $detail = $this->awaiting_detail;
+
+        if (! is_array($detail) || $detail === []) {
+            return null;
+        }
+
+        return [
+            'nodeId' => (string) $this->awaiting_node,
+            'title' => $detail['title'] ?? null,
+            'fields' => $detail['fields'] ?? [],
         ];
     }
 
