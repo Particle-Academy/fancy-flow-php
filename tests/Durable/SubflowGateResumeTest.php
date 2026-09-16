@@ -213,3 +213,138 @@ it('renders a form for a gate that lives inside a subflow', function (): void {
 
     expect($run->awaitingForm())->not->toBeNull();
 });
+
+// ---------------------------------------------------------------------------
+// A THIRD-PARTY pausing kind inside a subflow (#22, MOIC's actual shape)
+// ---------------------------------------------------------------------------
+
+/**
+ * A host gate, exactly as a marketplace / `#[FlowNode]` kind writes one: it
+ * pauses through the public contract and reads its answer back off its own
+ * `values` INPUT PORT.
+ *
+ * That port is the only resume channel such a kind has —
+ * `RunSetup::initialInputs()` says so in its own comment — because this package
+ * cannot reach inside a third-party executor the way it can override its own
+ * two human kinds.
+ */
+final class SgHostGate implements \FancyFlow\Contracts\NodeExecutor
+{
+    public function execute(\FancyFlow\Runtime\ExecutionContext $ctx): mixed
+    {
+        $values = $ctx->inputs['values'] ?? null;
+
+        if ($values === null) {
+            $ctx->pauseForHuman('input', ['kind' => 'review_approval', 'title' => 'Approve the child']);
+        }
+
+        $decision = is_array($values) ? (string) ($values['decision'] ?? '') : '';
+
+        return \FancyFlow\Runtime\Port::branch($decision === 'approved' ? 'approved' : 'rejected', $values);
+    }
+}
+
+it('resumes a THIRD-PARTY pausing kind at the top level', function (): void {
+    // The baseline, and it passes: at the top level the recorded submission is
+    // merged onto the node's `values` port by RunSetup::initialInputs(), which
+    // is keyed by node id against the graph being run.
+    app(\FancyFlow\ExecutorRegistry::class)->bind('sg_host_gate', new SgHostGate());
+
+    $run = FancyFlow::dispatch(
+        sgSchema(
+            [
+                sgNode('trigger', 'manual_trigger'),
+                sgNode('gate', 'sg_host_gate', ['title' => 'Approve']),
+                sgNode('end', 'output'),
+            ],
+            [
+                ['id' => 'e1', 'source' => 'trigger', 'target' => 'gate'],
+                ['id' => 'e2', 'source' => 'gate', 'target' => 'end', 'sourceHandle' => 'approved'],
+            ],
+        ),
+        ['trigger' => ['deal' => 42]],
+    );
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+
+    $run->submitInput(values: ['decision' => 'approved']);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+});
+
+it('resumes a THIRD-PARTY pausing kind that lives inside a SUBFLOW', function (): void {
+    // The reported bug. `initialInputs` is keyed by node id and handed to the
+    // PARENT graph, whose nodes are trigger/call/end -- `gate` is not among
+    // them, so the merged `values` port is never consumed. The subflow seeds
+    // the child's ENTRY nodes from its own inputs and knows nothing of the
+    // run's recorded answers, so the answer stops at the boundary.
+    //
+    // Our own two human kinds do NOT hit this: they resume on membership in the
+    // run's recorded answers, through a durable override bound by KIND, which
+    // survives into the child. So a builtin gate resumes one level down and a
+    // third-party gate does not -- the divergence this row exists to name.
+    app(\FancyFlow\ExecutorRegistry::class)->bind('sg_host_gate', new SgHostGate());
+
+    $child = Workflow::import(
+        sgSchema(
+            [
+                sgNode('c_in', 'manual_trigger'),
+                sgNode('gate', 'sg_host_gate', ['title' => 'Approve the child']),
+                sgNode('c_out', 'output'),
+            ],
+            [
+                ['id' => 'ce1', 'source' => 'c_in', 'target' => 'gate'],
+                ['id' => 'ce2', 'source' => 'gate', 'target' => 'c_out', 'sourceHandle' => 'approved'],
+            ],
+        ),
+        lenient: true,
+        registry: app(\FancyFlow\NodeKindRegistry::class),
+    )->graph;
+
+    Capabilities::setWorkflowResolver(new class($child) implements WorkflowResolver
+    {
+        public function __construct(private FlowGraph $child) {}
+
+        public function resolve(string $ref, ?int $version = null): FlowGraph|WorkflowResolutionFailure|null
+        {
+            return $ref === 'child' ? $this->child : null;
+        }
+    });
+
+    $run = FancyFlow::dispatch(
+        sgSchema(
+            [
+                sgNode('trigger', 'manual_trigger'),
+                sgNode('call', 'subflow', ['workflow' => 'child']),
+                sgNode('end', 'output'),
+            ],
+            [
+                ['id' => 'e1', 'source' => 'trigger', 'target' => 'call'],
+                ['id' => 'e2', 'source' => 'call', 'target' => 'end'],
+            ],
+        ),
+        ['trigger' => ['deal' => 42]],
+    );
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
+    expect($run->awaiting_node)->toBe('gate');
+
+    $run->submitInput(values: ['decision' => 'approved']);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+})->skip(
+    'KNOWN FAILURE, fancy-flow-php#22 — committed skipped rather than deleted so the '
+    .'disagreement stays visible and this flips green the day it is fixed. A third-party '
+    .'pausing kind resumes at the top level and NOT inside a subflow, because its only '
+    .'resume channel is the `values` input port that RunSetup::initialInputs() merges — '
+    .'and that map is keyed by node id against the graph being RUN, so a child node id is '
+    .'never consumed. Our own two human kinds are unaffected: they resume on the recorded '
+    .'answers of the run, through an override bound by KIND, which does survive into the '
+    .'child. Fixing it means letting a recorded answer reach a node at arbitrary DEPTH, '
+    .'which is a contract change across all four runtimes and the same question '
+    .'fancy-flow-php#19 needs answered for a per-item gate. Not patched locally on purpose.'
+);
