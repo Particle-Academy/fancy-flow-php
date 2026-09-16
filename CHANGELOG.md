@@ -10,6 +10,45 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.57.0 — 2026-09-16
+
+### Fixed
+
+- **A human gate inside a `subflow` can be answered again** (#21). `subflow`
+  wrapped every unsuccessful child run as `subflow "x" failed: <reason>` — and a
+  **pause travels that same channel**. `Pause::decode()` is prefix-anchored, so
+  a `human_approval` or `user_input` one level down produced:
+
+  ```
+  subflow "child" failed: fancy-flow:pause:{"nodeId":"gate",...}
+  ```
+
+  which does not decode. Three things followed, none of them loud:
+
+  1. The durable layer read a **FAILED run** rather than one parked on a person,
+     so **the gate could never be answered** — the run was unresumable.
+  2. It was reported as an error, so retry policy counted someone's pending
+     decision as a fault and burned attempts against a human being's lunch break.
+  3. The run looked finished and failed, which is the quiet kind of wrong.
+
+  This is the invariant this package already states — *an abort's reason is
+  VERBATIM, because a human gate pauses through the same channel* — broken at
+  the one place that wraps. A decodable pause now travels untouched; a genuine
+  failure still carries the `subflow "x" failed:` prefix, because naming which
+  child failed is real context worth keeping.
+
+  **`fancy-flow` (Rust) never had this** and carries a comment at the same line
+  saying why. `@particle-academy/fancy-flow` and `fancy-flow` (PyPI) both did,
+  and are fixed in the same release.
+
+  **What you must do:** nothing. If you have a parked run that was recorded as a
+  failed subflow, it was never resumable and will need re-running.
+
+  Pinned by two tests asserting the pause **DECODES** (never its text — the
+  reason is verbatim by contract, so a test pinned to the wording would pass
+  against the very decoration it exists to stop) and that a genuine failure
+  still names the subflow. Verified to fail against 0.56.0.
+
 ## 0.56.0 — 2026-09-16
 
 **BREAKING (behaviour): a node that declares NO output ports now publishes

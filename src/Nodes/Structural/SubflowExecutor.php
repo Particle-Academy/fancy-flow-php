@@ -13,6 +13,7 @@ use FancyFlow\ExecutorRegistry;
 use FancyFlow\Nodes\Support\ExecutorDeps;
 use FancyFlow\Registry\Builtin;
 use FancyFlow\Runtime\ExecutionContext;
+use FancyFlow\Runtime\Pause;
 use FancyFlow\Runtime\Port;
 use FancyFlow\Runtime\RunEvent;
 use FancyFlow\Runtime\RunOptions;
@@ -181,7 +182,30 @@ final class SubflowExecutor implements NodeExecutor
         );
 
         if (! $result->ok) {
-            $ctx->abort(sprintf('subflow "%s" failed: %s', $ref, $result->error ?? 'unknown error'));
+            $reason = (string) ($result->error ?? 'unknown error');
+
+            // A PAUSE IS NOT A FAILURE, and it travels this same channel.
+            //
+            // Until 0.57.0 every unsuccessful child run was wrapped as
+            // `subflow "x" failed: <reason>`. `Pause::decode()` is
+            // prefix-anchored, so a `human_approval` or `user_input` one level
+            // down produced a string that no longer decoded: the durable layer
+            // read a FAILED run instead of a run parked on a person, the gate
+            // became unresumable, and a retry policy counted someone's pending
+            // decision as a fault.
+            //
+            // This is the invariant stated in the repo's own agent guide --
+            // an abort's reason is VERBATIM, precisely because a human gate
+            // pauses through it -- broken at the one place that wraps. The
+            // Rust twin never had it and says why at the same line; PHP,
+            // TypeScript and Python all did.
+            if (Pause::decode($reason) !== null) {
+                $ctx->abort($reason);
+            }
+
+            // A genuine failure still names the subflow. That context is worth
+            // keeping; it is only the pause that must travel untouched.
+            $ctx->abort(sprintf('subflow "%s" failed: %s', $ref, $reason));
         }
 
         // `stream` alone still emits a final value on `stream` so downstream

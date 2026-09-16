@@ -155,3 +155,64 @@ it('surfaces a child failure as a named parent abort', function () {
     expect(fn () => subflowExec(['workflow' => 'broken']))
         ->toThrow(RunAborted::class, 'subflow "broken" failed');
 });
+
+// ---------------------------------------------------------------------------
+// A PAUSE IS NOT A FAILURE (#21)
+// ---------------------------------------------------------------------------
+
+it('lets a human gate one level down still decode at the top', function (): void {
+    // Until 0.57.0 every unsuccessful child run was wrapped as
+    // `subflow "x" failed: <reason>`, and `Pause::decode()` is prefix-anchored
+    // -- so a gate inside a subflow produced a string that no longer decoded.
+    // The durable layer read a FAILED run rather than one parked on a person,
+    // the gate became unresumable, and retry policy counted someone's pending
+    // decision as a fault.
+    //
+    // Asserted through the ENGINE rather than by calling the executor, because
+    // the defect is in what reaches the TOP of a run, and an executor-level
+    // assertion would have passed throughout.
+    $child = ffGraph([ffNode('gate', 'hostGate')]);
+    $executors = \FancyFlow\Registry\Builtin::executors()
+        ->bind('hostGate', fn (ExecutionContext $ctx) => $ctx->pauseForHuman('approval', ['title' => 'Approve item']));
+    $executors->bind('subflow', new SubflowExecutor(resolver: mapResolver(['child' => $child])));
+
+    $result = (new \FancyFlow\Engine\FlowRunner(connRegistryForSubflow()))->run(
+        ffGraph([ffNode('sf', 'subflow', ['workflow' => 'child'])]),
+        $executors,
+    );
+
+    expect($result->ok)->toBeFalse();
+
+    // The assertion that carries the weight: it DECODES. Never assert on the
+    // text -- the reason is verbatim by contract, and asserting its shape is
+    // how a decorating change passes a suite that was meant to stop it.
+    $pause = \FancyFlow\Runtime\Pause::decode((string) $result->error);
+    expect($pause)->not->toBeNull();
+    expect($pause->nodeId)->toBe('gate');
+    expect($pause->awaiting)->toBe('approval');
+});
+
+it('still names the subflow when the child genuinely FAILS', function (): void {
+    // The other half. The `subflow "x" failed:` prefix is real context for a
+    // real failure and must not be lost while fixing the pause -- otherwise a
+    // child error arrives at the top with nothing saying which child.
+    $child = ffGraph([ffNode('boom', 'hostBoom')]);
+    $executors = \FancyFlow\Registry\Builtin::executors()
+        ->bind('hostBoom', fn (ExecutionContext $ctx) => $ctx->abort('the child exploded'));
+    $executors->bind('subflow', new SubflowExecutor(resolver: mapResolver(['child' => $child])));
+
+    $result = (new \FancyFlow\Engine\FlowRunner(connRegistryForSubflow()))->run(
+        ffGraph([ffNode('sf', 'subflow', ['workflow' => 'child'])]),
+        $executors,
+    );
+
+    expect($result->ok)->toBeFalse();
+    expect((string) $result->error)->toContain('subflow "child" failed:');
+    expect((string) $result->error)->toContain('the child exploded');
+    expect(\FancyFlow\Runtime\Pause::decode((string) $result->error))->toBeNull();
+});
+
+function connRegistryForSubflow(): \FancyFlow\NodeKindRegistry
+{
+    return \FancyFlow\Registry\Builtin::register(new \FancyFlow\NodeKindRegistry(), withStructural: true);
+}
