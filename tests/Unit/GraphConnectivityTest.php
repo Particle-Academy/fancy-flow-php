@@ -332,14 +332,18 @@ it('believes a hand-built node that declares its own outputs, over its kind', fu
     expect($issues)->toBe([]);
 });
 
-it('refuses the same override coming through import, because import DROPS node outputs', function () {
-    // Not an inconsistency -- the one honest answer.
+it('accepts the same override coming through import, because import now READS node outputs', function () {
+    // The mirror of the test above, and it used to assert the opposite.
     //
-    // `import()` deliberately leaves `outputs` null on every node it hydrates
-    // (matching the TS importer), so a declaration in the JSON does not survive
-    // and the ENGINE will treat this node as terminal too. Accepting the edge
-    // here would have validation promise a delivery the runtime then silently
-    // fails to make -- which is the exact defect this whole check exists for.
+    // `import()` left `outputs` null on every node it hydrated, so a
+    // declaration in the JSON did not survive and the analyser refused this
+    // edge -- correctly, given the engine would also have treated the node as
+    // terminal. The old test's name said so: "because import DROPS node
+    // outputs". That was a bug being documented as a contract.
+    //
+    // Now the field survives the import, so the author's declaration reaches
+    // both the analyser and the engine, and the two agree. An `output` node
+    // that says it publishes `done` publishes `done`.
     $schema = connSchema(
         [
             connNode('t', 'manual_trigger'),
@@ -348,11 +352,46 @@ it('refuses the same override coming through import, because import DROPS node o
         ],
         [
             ['id' => 'e1', 'source' => 't', 'target' => 'out'],
-            ['id' => 'e2', 'source' => 'out', 'target' => 'after'],
+            ['id' => 'e2', 'source' => 'out', 'target' => 'after', 'sourceHandle' => 'done'],
         ],
     );
 
-    expect(implode("\n", connErrors($schema)))->toContain('TERMINAL');
+    expect(connErrors($schema))->toBe([]);
+});
+
+it('round-trips a declared port list, including an explicitly empty one', function () {
+    // The three states have to survive export->import, or the strict reading is
+    // only strict until a graph is saved. An empty list exported as "absent"
+    // would silently become the fallback state on the next read.
+    $schema = connSchema(
+        [
+            connNode('t', 'manual_trigger'),
+            connNode('a', 'log', ['outputs' => [['id' => 'done']]]),
+            connNode('b', 'log', ['outputs' => []]),
+            connNode('c', 'log'),
+        ],
+        [['id' => 'e1', 'source' => 't', 'target' => 'a']],
+    );
+
+    $graph = \FancyFlow\Workflow::import($schema, lenient: true, registry: connRegistry())->graph;
+    $byId = [];
+    foreach ($graph->nodes as $n) {
+        $byId[$n->id] = $n;
+    }
+
+    expect($byId['a']->outputs)->toHaveCount(1);
+    expect($byId['b']->outputs)->toBe([]);   // explicitly none
+    expect($byId['c']->outputs)->toBeNull(); // not declared
+
+    $exported = \FancyFlow\Workflow::export($graph);
+    $out = [];
+    foreach ($exported['graph']['nodes'] as $n) {
+        $out[$n['id']] = $n;
+    }
+
+    expect($out['a']['outputs'])->toBe([['id' => 'done']]);
+    expect($out['b']['outputs'])->toBe([]);
+    expect($out['c'])->not->toHaveKey('outputs');
 });
 
 it('does not refuse an edge from a kind it has never heard of', function () {

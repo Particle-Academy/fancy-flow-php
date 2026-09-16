@@ -609,14 +609,19 @@ final class FlowRunner
         $declared = $node->outputs;
         $kindName = $node->kind();
         if ($declared === null && $kindName !== null) {
-            $kindPorts = ($kinds ?? NodeKindRegistry::default())->get($kindName)?->outputs;
-            // Only adopt NON-EMPTY kind ports. A terminal kind (category
-            // "output") declares an empty list, and consuming that literally
-            // would publish zero ports where the historical fallback published
-            // `out` — silently cutting every chain through such a node.
-            if ($kindPorts !== null && $kindPorts !== []) {
-                $declared = $kindPorts;
-            }
+            // The KIND's ports, INCLUDING an empty list. Until 0.56.0 an empty
+            // one was refused here, because consuming it literally publishes
+            // zero ports where the historical fallback published `out` — and
+            // that silently cut every chain through such a node.
+            //
+            // The protection is gone because the silence is gone. An edge
+            // leaving a node that published nothing now raises the
+            // undelivered-edge warning, so a truncated chain announces itself
+            // instead of being papered over with a port the node never
+            // declared. Keeping the refusal as well would mean a terminal kind
+            // could never actually terminate — and the owner's ruling was
+            // strict-but-loud, not lenient.
+            $declared = ($kinds ?? NodeKindRegistry::default())->get($kindName)?->outputs;
         }
 
         if ($declared === null) {

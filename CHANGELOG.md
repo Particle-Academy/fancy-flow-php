@@ -10,6 +10,68 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.56.0 — 2026-09-16
+
+**BREAKING (behaviour): a node that declares NO output ports now publishes
+nothing, and a chain it cuts says so. A terminal node can finally terminate.**
+
+### Fixed
+
+- **`Workflow::import()` now READS a node's declared `inputs` / `outputs`, and
+  `export()` writes them back** (#20). It dropped them, with a comment claiming
+  it was "matching the TS importer" — and that was measurably false: the
+  TypeScript importer carries a document's ports onto `data.outputs`, and its
+  exporter writes them **precisely so a runtime in another language does not
+  have to guess at a config-derived port set it cannot compute** (`switch_case`
+  cases, `llm_router` routes).
+
+  So the one field written *for* this runtime was the one field this runtime
+  threw away. Nothing failed; the fallback quietly substituted the kind's
+  **placeholder** ports — a `switch_case` with cases `alpha` / `beta` reported
+  `case_a`, `case_b` — so the undelivered-edge diagnostic named ports the node
+  did not have and omitted the ones it did.
+
+  `fancy-flow` (Python) and `fancy-flow` (Rust) had the identical gap and are
+  fixed in the same release. Three states survive the round trip: absent means
+  "not declared", `[]` means "explicitly no ports", a list means those ports.
+  A port's `type` survives too — it was written on export and dropped on import,
+  which made the round trip lossy in one direction.
+
+### Changed
+
+- **An empty output declaration means NO PORTS — from the node OR from the
+  kind.** `activatedPorts` refused an empty list coming from a kind and
+  published `out` instead, so a terminal kind (`log`, `output`) could never
+  actually terminate and a chain ran straight through it.
+
+  That refusal was defensible while the alternative was a SILENT cut. The
+  owner's ruling is **strict, but a terminal node must be loud**, so the cut now
+  happens and announces itself.
+
+  **What you must DO:** if a graph deliberately chains *through* a `log` or
+  `output` node, or through any node declaring `outputs: []`, that chain now
+  stops — and the run tells you which edge died. Give the node real output
+  ports, or route around it. `php artisan` and every other entry point are
+  unaffected.
+
+- **`PortResolution::possible()` honours the empty declaration too, and that is
+  what makes the above safe.** It had the SAME empty-to-`out` collapse, in the
+  other of the two gates that shape a port set. Fixing only the runner would
+  have been half a fix and the dangerous half: the node would publish nothing
+  while this lookup still reported `out` as deliverable, leaving the
+  undelivered-edge warning **silent for exactly the edge that had just stopped
+  delivering**.
+
+  A terminal node with nothing downstream stays silent — the warning is keyed on
+  the EDGE, because a diagnostic that fires on correct graphs is how a real one
+  stops being read.
+
+- **The pinned fixture set moves to `particle-academy/fancy-conformance` 0.29.**
+  `flow/graph-runs` row 0003's golden changed with the ruling (a chain through a
+  `log` node no longer reaches the node after it), and `flow/port-activation`
+  row 0303 is no longer skipped for node — it recorded this exact divergence and
+  now passes everywhere.
+
 ## 0.55.0 — 2026-09-16
 
 ### Added

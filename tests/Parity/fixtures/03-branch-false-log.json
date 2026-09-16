@@ -89,10 +89,6 @@
             "lg": {
                 "logged": "regular Bo",
                 "level": "info"
-            },
-            "o": {
-                "logged": "regular Bo",
-                "level": "info"
             }
         }
     }

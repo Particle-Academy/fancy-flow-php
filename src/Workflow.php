@@ -10,6 +10,7 @@ use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Schema\FlowNode;
 use FancyFlow\Schema\ImportIssue;
 use FancyFlow\Schema\ImportResult;
+use FancyFlow\Schema\PortDescriptor;
 use FancyFlow\Schema\WorkflowMetadata;
 
 /**
@@ -201,8 +202,24 @@ final class Workflow
                 width: isset($raw['width']) ? (float) $raw['width'] : null,
                 height: isset($raw['height']) ? (float) $raw['height'] : null,
                 style: isset($raw['style']) && is_array($raw['style']) ? $raw['style'] : null,
-                // inputs/outputs intentionally left null on import — the engine
-                // then defaults to a single `out` port, matching the TS import.
+                // Declared ports, READ rather than dropped. The comment that
+                // stood here said they were left null "matching the TS import",
+                // and that was measurably false: the TypeScript importer carries
+                // the document's ports onto `data.outputs`, and its EXPORTER
+                // writes them precisely so a runtime in another language does
+                // not have to guess at a config-derived port set it cannot
+                // compute (`switch_case` cases, `llm_branch` routes).
+                //
+                // So the one field written FOR this runtime was the one field
+                // this runtime threw away, and the fallback quietly substituted
+                // the kind's placeholder ports — `case_a`, `case_b` — for the
+                // node's real ones. Nothing failed; the diagnostics simply named
+                // ports the node did not have.
+                //
+                // Three-state, and the distinction is the point: absent = "not
+                // declared, fall back"; `[]` = "explicitly no output ports".
+                inputs: self::portsFrom($raw['inputs'] ?? null),
+                outputs: self::portsFrom($raw['outputs'] ?? null),
             );
             $nodes[] = $node;
             $nodeIds[$node->id] = true;
@@ -322,6 +339,50 @@ final class Workflow
         return json_encode(self::export($graph, $metadata, $view), $flags | JSON_THROW_ON_ERROR);
     }
 
+    /**
+     * Read a declared port list, preserving the three-state distinction.
+     *
+     * `null` (absent) stays null so the engine falls back. An empty ARRAY stays
+     * an empty array — it is a node saying "no ports", which is a different
+     * claim from saying nothing, and collapsing the two is the bug this method
+     * exists to avoid repeating.
+     *
+     * @param  mixed  $raw
+     * @return list<PortDescriptor>|null
+     */
+    private static function portsFrom(mixed $raw): ?array
+    {
+        if (! is_array($raw)) {
+            return null;
+        }
+
+        $ports = [];
+        foreach ($raw as $port) {
+            // A malformed entry is skipped rather than failing the import: a
+            // document that is otherwise readable should still run, and the
+            // undelivered-edge warning names any port that then goes missing.
+            if (is_array($port) && isset($port['id']) && is_scalar($port['id'])) {
+                // `type` is read as well as `id` and `label`, because
+                // `toSchemaNode()` WRITES all three. Reading only two made the
+                // round trip lossy in one direction: a port's logical type
+                // survived an export and vanished on the next import, so a host
+                // validating connections against it would find the field
+                // present in a saved document and absent in the graph it just
+                // loaded from that document. Nothing in the engine reads it,
+                // which is exactly why it would have gone unnoticed.
+                $ports[] = new PortDescriptor(
+                    (string) $port['id'],
+                    isset($port['label']) && is_scalar($port['label']) ? (string) $port['label'] : null,
+                    isset($port['type']) && is_scalar($port['type']) ? (string) $port['type'] : null,
+                );
+            } elseif (is_string($port)) {
+                $ports[] = new PortDescriptor($port);
+            }
+        }
+
+        return $ports;
+    }
+
     /** @return array<string,mixed> */
     private static function toSchemaNode(FlowNode $node): array
     {
@@ -364,6 +425,22 @@ final class Workflow
         }
         if ($node->style !== null && $node->style !== []) {
             $out['style'] = $node->style;
+        }
+        // Declared ports, written back. Guarded on `!== null`, NOT on
+        // non-emptiness: an empty list is a node saying "no output ports", and
+        // omitting it would export that as "not declared" — silently turning
+        // the strict state into the fallback one on the next import. That is the
+        // round trip this pair exists to make lossless.
+        foreach (['inputs' => $node->inputs, 'outputs' => $node->outputs] as $key => $ports) {
+            if ($ports !== null) {
+                $out[$key] = array_map(
+                    static fn (PortDescriptor $p): array => array_filter(
+                        ['id' => $p->id, 'label' => $p->label, 'type' => $p->type],
+                        static fn (mixed $v): bool => $v !== null,
+                    ),
+                    $ports,
+                );
+            }
         }
 
         return $out;

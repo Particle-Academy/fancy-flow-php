@@ -270,9 +270,18 @@ it('falls back to the kind registry when a hand-written schema omits ports', fun
     NodeKindRegistry::resetDefault();
 });
 
-it('keeps publishing on out for a terminal kind that declares no ports', function () {
-    // A category-"output" kind declares an EMPTY port list. Consuming that
-    // literally would publish nothing and cut every chain through such a node.
+it('publishes NOTHING for a terminal kind that declares no ports, and says so', function () {
+    // A category-"output" kind declares an EMPTY port list, and as of 0.56.0
+    // that is honoured literally: the node terminates.
+    //
+    // This test asserted the OPPOSITE until 0.56.0 — the empty list was refused
+    // and the node published `out`, so a chain continued straight through a
+    // node that had declared it publishes nothing. That protection existed
+    // because the alternative was a SILENT cut. The owner's ruling was
+    // strict-but-loud, so the cut now happens AND announces itself, and both
+    // halves are asserted here: a test that only checked `$seen` would pass
+    // against an engine that truncated in silence, which is the failure this
+    // change was allowed to introduce only because it does not.
     NodeKindRegistry::default()->register(new NodeKind(
         name: 'terminal',
         category: 'output',
@@ -296,7 +305,41 @@ it('keeps publishing on out for a terminal kind that declares no ports', functio
     [$result] = runGraph($graph, $executors);
 
     expect($result->ok)->toBeTrue();
-    expect($seen)->toBe(['next']);
+    expect($seen)->toBe([]);
+
+    $warnings = array_values(array_filter(
+        $result->events,
+        static fn ($e): bool => $e->type === 'log' && $e->level === 'warn',
+    ));
+
+    expect($warnings)->toHaveCount(1);
+    expect($warnings[0]->message)->toContain('Edge e1 reads port "out" from node t');
+
+    NodeKindRegistry::resetDefault();
+});
+
+it('stays silent for a terminal kind with nothing downstream', function () {
+    // The other half, and the reason the warning is keyed on the EDGE rather
+    // than on publishing nothing: a terminal node at the end of a chain is the
+    // normal case and must not warn. A diagnostic that fires on correct graphs
+    // is how a real one stops being read.
+    NodeKindRegistry::default()->register(new NodeKind(
+        name: 'terminal',
+        category: 'output',
+        label: 'Terminal',
+        outputs: [],
+    ));
+
+    $graph = ffGraph([ffNode('t', 'terminal')], []);
+    $executors = (new ExecutorRegistry())->bind('terminal', fn () => 'done');
+
+    [$result] = runGraph($graph, $executors);
+
+    expect($result->ok)->toBeTrue();
+    expect(array_filter(
+        $result->events,
+        static fn ($e): bool => $e->type === 'log' && $e->level === 'warn',
+    ))->toBe([]);
 
     NodeKindRegistry::resetDefault();
 });
