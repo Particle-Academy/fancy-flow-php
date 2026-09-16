@@ -35,6 +35,8 @@ use Throwable;
  *
  * Port activation follows three conventions on an executor's result:
  *   1. `['__port' => 'x', 'value' => …]` → only port `x` emits.
+ *   1b. `['__ports' => ['x','y'], 'value' => …]` → exactly those emit, sharing
+ *       the payload; `['__ports' => ['x' => …, 'y' => …]]` gives each its own.
  *   2. `['branch' => 'x', 'value' => …]` → only port `x` emits (Decision sugar).
  *   3. anything else → the value is published on every declared output port.
  *
@@ -304,8 +306,15 @@ final class FlowRunner
 
         $activated = $this->activatedPorts($node, $result, $kinds);
         foreach ($activated['ports'] as $portId) {
-            $portValues[$this->portKey($node->id, $portId)] = $activated['value'];
-            $emit(RunEvent::nodeOutput($node->id, $portId, $activated['value']));
+            // `array_key_exists` on the per-port map, never `??`: a payload that
+            // is present and null is a payload, and `?? $value` would hand that
+            // port the shared value instead. Same distinction as `branch`.
+            $value = isset($activated['values']) && array_key_exists($portId, $activated['values'])
+                ? $activated['values'][$portId]
+                : $activated['value'];
+
+            $portValues[$this->portKey($node->id, $portId)] = $value;
+            $emit(RunEvent::nodeOutput($node->id, $portId, $value));
         }
 
         $completed[$node->id] = true;
@@ -533,6 +542,29 @@ final class FlowRunner
         if (is_array($result)) {
             if (isset($result['__port']) && is_string($result['__port'])) {
                 return ['ports' => [$result['__port']], 'value' => $result['value'] ?? null];
+            }
+            // A CHOSEN SUBSET (#18, reported by MOIC): a LIST lights those ports
+            // with one payload, a MAP gives each lit port its own. Before this a
+            // node could light one port or all of them, so a router that matched
+            // two of five silently dropped work or woke lanes nobody asked for.
+            //
+            // An empty array lights NOTHING, deliberately: the same answer an
+            // explicitly empty `outputs` gives below.
+            if (isset($result['__ports']) && is_array($result['__ports'])) {
+                $ports = $result['__ports'];
+
+                if (array_is_list($ports)) {
+                    return [
+                        'ports' => array_values(array_filter($ports, is_string(...))),
+                        'value' => $result['value'] ?? null,
+                    ];
+                }
+
+                return [
+                    'ports' => array_map(strval(...), array_keys($ports)),
+                    'value' => $result['value'] ?? null,
+                    'values' => $ports,
+                ];
             }
             if (isset($result['branch']) && is_string($result['branch'])) {
                 // `array_key_exists`, NOT `??`. The two are different questions

@@ -10,6 +10,48 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.55.0 — 2026-09-16
+
+### Added
+
+- **A node can activate a CHOSEN SUBSET of its output ports** (#18, reported by
+  MOIC). The engine knew two answers — `['__port' => …]` / `['branch' => …]` lit
+  exactly one port, anything else lit EVERY declared port — so a router matching
+  two of five lanes had to drop the rest of the work or wake lanes nobody asked
+  for.
+
+  `Port::many(['a', 'c'], $value)` lights those two, each carrying `$value`.
+  `Port::many(['a' => $x, 'c' => $y])` gives each lit port its OWN payload, in
+  the array's declaration order. The wire shape is
+  `['__ports' => [...], 'value' => …]` or `['__ports' => [port => value]]`, read
+  directly by the engine, so a host in another language can emit it without the
+  helper.
+
+  **An explicitly empty array lights nothing, deliberately** — the honest answer
+  for a router that matched no rule, and the same answer an explicitly empty
+  `outputs` already gives. A malformed `__ports` (a string, an int) falls
+  through to the every-declared-port rule instead, so a typo cannot silently
+  truncate a run.
+
+  Per-port payloads are read with `array_key_exists`, not `??`: a payload that
+  is present and `null` is a payload, the distinction `branch` already had to
+  learn the hard way.
+
+  **What you must do:** nothing. This is additive — a node that never emits
+  `__ports` behaves exactly as before.
+
+- **`flow/port-activation` (12 rows) is asserted here**
+  (`tests/Parity/PortActivationConformanceTest.php`). It pins the subset rule,
+  the two single-port rules and the declared-port fallbacks across all four
+  runtimes. Row 0303 is skipped for **node**, not for PHP: an explicitly empty
+  `outputs` publishes nothing here, and `@particle-academy/fancy-flow` collapses
+  it to `out`. The summary prints that skip on every run.
+
+### Changed
+
+- **The pinned fixture set moves to `particle-academy/fancy-conformance` 0.27.**
+  No existing row changed.
+
 ### Fixed
 
 - **The `per_node` description in `config/fancy-flow.php` still said
