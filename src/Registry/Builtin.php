@@ -317,7 +317,7 @@ final class Builtin
                     ['path' => 'items', 'type' => 'array', 'description' => 'The list that was iterated.'],
                     ['path' => 'count', 'type' => 'number', 'description' => 'How many items it held.'],
                 ],
-                'description' => 'Iterate over a list, emitting each item on `item`.', 'icon' => '↻',
+                'description' => 'Publishes the resolved list and its size on BOTH `item` and `done`. Fan-out as DATA, not as jobs -- nothing runs per item.', 'icon' => '↻',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'item', 'label' => 'item'], ['id' => 'done', 'label' => 'done']],
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'source', 'label' => 'List', 'example' => '{{ $json.users }}', 'required' => true],

@@ -10,6 +10,30 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.57.2 — 2026-09-16
+
+### Fixed
+
+- **The `for_each` kind stopped describing something it does not do.** Its
+  description read *"Iterate over a list, emitting each item on `item`."* It does
+  not iterate, and never has, in any runtime: it publishes the resolved list and
+  its size on BOTH `item` and `done`. Fan-out as DATA, not as jobs.
+
+  **This is not cosmetic — the false text has a victim.** A consumer author
+  wired `{{ item.tier }}` off a `for_each` precisely because the palette said it
+  emits each item. Their own graph validator caught it; without one the run goes
+  GREEN and writes an empty result, because an unresolvable path yields nothing
+  without failing. A description is what an author — increasingly an LLM — reads
+  to learn what a node does, so a false one teaches a reference that silently
+  resolves to nothing.
+
+  `fancy-flow` (Rust) already described it correctly and needed no change; the
+  TypeScript and Python twins are corrected in the same release.
+
+  **What you must do:** nothing. Behaviour is unchanged — only the sentence that
+  was wrong about it. If you wired a node expecting per-item values, it was
+  never doing that; real iteration is fancy-flow-php#19.
+
 ## 0.57.1 — 2026-09-16
 
 ### Fixed
