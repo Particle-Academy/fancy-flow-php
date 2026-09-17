@@ -10,6 +10,8 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.58.0 — 2026-09-17
+
 ### Fixed
 
 - **A node inside a subflow that completed before a human gate is no longer
