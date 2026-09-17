@@ -348,3 +348,90 @@ it('resumes a THIRD-PARTY pausing kind that lives inside a SUBFLOW', function ()
     .'which is a contract change across all four runtimes and the same question '
     .'fancy-flow-php#19 needs answered for a per-item gate. Not patched locally on purpose.'
 );
+
+/**
+ * **The consumer's actual shape, end to end.**
+ *
+ * Neither test above covers it. `SubflowChildReplayTest` counts re-execution
+ * around a `human_approval`; the `user_input` case above has nothing before the
+ * gate to re-execute. The reported case has BOTH: a reusable Op whose form is
+ * its standalone interface, called as a subflow, with real work ahead of the
+ * form.
+ *
+ * Their owner's words for what they expected to exist:
+ *
+ * > *"did fany ever upgrade fancy flow so we can have subflows with user inputs
+ * > that bubble up?"*
+ *
+ * Three properties at once, and the middle one is the one that was broken:
+ * the form reaches the person, the work ahead of it happens ONCE across the
+ * pause, and answering it finishes the run.
+ */
+it('runs a reusable Op with a form, called as a subflow, doing its pre-form work once', function (): void {
+    $writes = 0;
+
+    $child = Workflow::import(
+        sgSchema(
+            [
+                sgNode('c_in', 'manual_trigger'),
+                sgNode('writes', 'sgOpWriter'),
+                sgNode('gate', 'user_input', ['title' => 'Solutions Map', 'fields' => [['name' => 'ok']]]),
+                sgNode('c_out', 'output'),
+            ],
+            [
+                ['id' => 'ce1', 'source' => 'c_in', 'target' => 'writes'],
+                ['id' => 'ce2', 'source' => 'writes', 'target' => 'gate'],
+                ['id' => 'ce3', 'source' => 'gate', 'target' => 'c_out'],
+            ],
+        ),
+        lenient: true,
+        registry: app(\FancyFlow\NodeKindRegistry::class),
+    )->graph;
+
+    Capabilities::setWorkflowResolver(new class($child) implements WorkflowResolver
+    {
+        public function __construct(private FlowGraph $child) {}
+
+        public function resolve(string $ref, ?int $version = null): FlowGraph|WorkflowResolutionFailure|null
+        {
+            return $ref === 'child' ? $this->child : null;
+        }
+    });
+
+    app(\FancyFlow\ExecutorRegistry::class)->bind('sgOpWriter', function () use (&$writes) {
+        $writes++;
+
+        return ['wrote' => $writes];
+    });
+
+    $run = FancyFlow::dispatch(
+        sgSchema(
+            [
+                sgNode('trigger', 'manual_trigger'),
+                sgNode('call', 'subflow', ['workflow' => 'child']),
+                sgNode('end', 'output'),
+            ],
+            [
+                ['id' => 'e1', 'source' => 'trigger', 'target' => 'call'],
+                ['id' => 'e2', 'source' => 'call', 'target' => 'end'],
+            ],
+        ),
+        ['trigger' => ['deal' => 42]],
+    );
+    $run->refresh();
+
+    // 1. The form reached the person, from one level down.
+    expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT)
+        ->and($run->awaitingForm())->not->toBeNull();
+    expect($writes)->toBe(1, 'the work ahead of the form ran once');
+
+    // 2. Answering it finishes the run.
+    $run->submitInput(values: ['ok' => true]);
+    $run->refresh();
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+
+    // 3. THE ONE THAT WAS BROKEN. A node that WRITES, ahead of a form, inside a
+    //    reused Op, must not write again because someone took a minute to
+    //    answer. 2 here is a duplicate row in a tenant's database.
+    expect($writes)->toBe(1, 'pre-form work must not repeat when the parent resumes');
+});
