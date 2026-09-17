@@ -18,6 +18,18 @@ final class RunEvent
     public const NODE_STATUS = 'node-status';
     public const NODE_MESSAGE = 'node-message';
     public const NODE_OUTPUT = 'node-output';
+
+    /**
+     * Work finished INSIDE a nesting node, addressed `parent/child`.
+     *
+     * A distinct type rather than a `node-output` on purpose. Its `nodeId` is an
+     * ADDRESS, not a node of the graph being run -- a consumer that looked it up
+     * in the run's schema would find nothing, which is precisely the failure a
+     * consumer already hit reading `awaiting_node` (fancy-flow-php#22). Giving
+     * it its own type means every existing consumer ignores it by switching on
+     * `type`, and only the durable layer, which wants exactly this, reads it.
+     */
+    public const NODE_CHECKPOINT = 'node-checkpoint';
     public const LOG = 'log';
     public const RUN_END = 'run-end';
     public const RUN_ERROR = 'run-error';
@@ -64,6 +76,17 @@ final class RunEvent
     public static function nodeOutput(string $nodeId, string $portId, mixed $value): self
     {
         return new self(self::NODE_OUTPUT, nodeId: $nodeId, portId: $portId, value: $value);
+    }
+
+    /**
+     * @param string $address `parent/child` -- qualified the same way a
+     *                        {@see RunIdentity} key is, and for the same reason.
+     * @param mixed  $value   The nested node's RESULT, not a port value: resume
+     *                        republishes from it and recomputes ports itself.
+     */
+    public static function nodeCheckpoint(string $address, mixed $value): self
+    {
+        return new self(self::NODE_CHECKPOINT, nodeId: $address, value: $value);
     }
 
     public static function log(string $level, string $message, ?string $nodeId = null, mixed $detail = null): self

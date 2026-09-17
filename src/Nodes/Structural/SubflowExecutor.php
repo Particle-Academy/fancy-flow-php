@@ -150,9 +150,14 @@ final class SubflowExecutor implements NodeExecutor
         // THIS node. Re-emitting the child's raw events would collide with the
         // parent's own node ids — a child's node-status for its `output` node is
         // not a status for anything in the parent graph.
+        // A child's raw events are NEVER re-emitted on the parent's feed: a
+        // child's status for its own `output` node is not a status for anything
+        // in the parent graph, and a consumer keying on node id would collide.
+        // Only the tagged human-readable mirror goes out, and only when asked.
+        $parentId = $ctx->node->id;
         $forward = $streaming
-            ? static function (RunEvent $event) use ($ctx, $ref): void {
-                $ctx->emit(RunEvent::log('info', "[{$ref}] ".self::describe($event), $ctx->node->id));
+            ? static function (RunEvent $event) use ($ctx, $ref, $parentId): void {
+                $ctx->emit(RunEvent::log('info', "[{$ref}] ".self::describe($event), $parentId));
             }
             : null;
 
@@ -178,8 +183,36 @@ final class SubflowExecutor implements NodeExecutor
                 // clock ride down unchanged: the child's work happens inside
                 // this node's attempt.
                 run: $ctx->run?->descend($ctx->node->id),
+                // What this node's own checkpoints said about work INSIDE it.
+                // FlowRunner sliced these off the parent's map and stripped this
+                // node's prefix, so they arrive keyed by the CHILD's bare node
+                // ids -- exactly the shape a child runner resumes from. Empty on
+                // a first attempt; on a resume after a gate it is what stops the
+                // child re-running work it already committed.
+                resumeOutputs: $ctx->resumeOutputs,
             ),
         );
+
+        // THE CHECKPOINT, and it must happen before the pause is propagated.
+        //
+        // Every child node that COMPLETED is re-emitted at a QUALIFIED address
+        // -- `parent/child` -- carrying that node's result. The durable layer
+        // writes a claim row per address, so work done at depth is checkpointed
+        // at depth. Without it the whole child collapses into the ONE claim row
+        // belonging to this node, and a child node that ran before a gate runs
+        // AGAIN when the parent resumes: measured at 2 in
+        // `tests/Durable/SubflowChildReplayTest.php`, and fancy-flow-php#22.
+        //
+        // `emit` is the only channel the pure core has to the durable layer, and
+        // that is the point -- the engine never learns there is a database, and
+        // the durable layer learns about depth without reaching in here.
+        //
+        // `$result->outputs` is populated even when `$result->ok` is false, so a
+        // child parked on a human gate still reports everything it finished
+        // first. That is exactly the case this exists for.
+        foreach ($result->outputs as $childId => $childResult) {
+            $ctx->emit(RunEvent::nodeCheckpoint($parentId.'/'.$childId, $childResult));
+        }
 
         if (! $result->ok) {
             $reason = (string) ($result->error ?? 'unknown error');

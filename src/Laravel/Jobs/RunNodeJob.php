@@ -207,6 +207,26 @@ final class RunNodeJob implements ShouldQueue
 
         $result = $replay['result'];
 
+        // CHECKPOINT WORK DONE AT DEPTH, before this node settles either way.
+        //
+        // A nesting node (today: `subflow`) re-emits each child node that
+        // completed at a qualified `parent/child` address. Each gets its own
+        // claim row, so a child node that finished before a human gate is NOT
+        // re-executed when the parent resumes -- it is republished from its
+        // checkpoint exactly as a top-level node is.
+        //
+        // Written here rather than in the completion branch on purpose: the
+        // case this exists for is the one where this node does NOT complete,
+        // because its child parked on a person. `RunResult::$outputs` is
+        // populated even on an unsuccessful run, which is what makes the
+        // partial progress recoverable at all.
+        //
+        // `adopt` rather than `complete`: there is no prior claim to transition
+        // from, since nothing dispatched these addresses as nodes of this graph.
+        foreach ($replay['nested'] ?? [] as $address => $output) {
+            NodeClaims::adopt($this->runKey, $address, $output, $replay['ports'][$address] ?? []);
+        }
+
         // The node ran. Its output and the ports it lit are written together
         // with the status, so there is no moment where it reads as done with
         // nothing to resume from.

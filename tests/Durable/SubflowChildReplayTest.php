@@ -94,14 +94,4 @@ it('counts how many times a child node before the gate executes across a pause',
     // THE MEASUREMENT. 1 means the child's committed work survived the pause.
     // 2 means it re-ran -- and a node that WRITES would have written twice.
     expect($sideEffects)->toBe(1, 'a committed child node must not re-execute on resume');
-})->skip(
-    'KNOWN FAILURE, measured at 2 (fancy-flow-php#22/#19). A child node that already '
-    .'ran before a gate RE-EXECUTES when the parent resumes, so a child that writes '
-    .'writes twice. SubflowExecutor runs the child fresh on every parent attempt and '
-    .'passes no resumeOutputs down, and per_node gives the whole child ONE claim row -- '
-    .'the subflow node -- so nothing inside it is checkpointed independently. Committed '
-    .'skipped rather than deleted so the number is on the record and this flips green '
-    .'the day work at depth is checkpointed at depth. That is the same requirement '
-    .'fancy-flow-php#19 states for items 1..k-1 of an iterated body, which is why it is '
-    .'being settled in that design rather than patched here.'
-);
+});

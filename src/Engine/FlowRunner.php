@@ -239,7 +239,7 @@ final class FlowRunner
 
             try {
                 self::announce($emit, $node, 'start');
-                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run, $executors);
+                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run, $executors, self::nestedResumeOutputs($resumeOutputs, $node->id));
                 $result = $exec($ctx);
                 $this->publish($node, $result, $outputs, $portValues, $completed, $emit, kinds: $executors->kinds());
                 // Success path only, and deliberately so: a `stoppingMsg` of
@@ -671,4 +671,35 @@ final class FlowRunner
         $emit(RunEvent::nodeMessage($node->id, $phase, $message));
     }
 
+
+    /**
+     * The slice of `resumeOutputs` that belongs INSIDE `$nodeId`, with the
+     * prefix stripped so the nested graph sees its own bare node ids.
+     *
+     * Addresses are `parent/child`, qualified the same way {@see RunIdentity}
+     * qualifies an idempotency key — because they answer the same question:
+     * *which execution of which node is this?* A bare node id cannot, since a
+     * child graph legitimately contains a node named like one in the parent.
+     *
+     * A map with no qualified keys slices to nothing and costs one pass, which
+     * is the normal case. **That is what makes this backward compatible**: a
+     * flat `resumeOutputs` behaves exactly as it did before addresses existed.
+     *
+     * @param  array<string,mixed>  $resumeOutputs
+     * @return array<string,mixed>
+     */
+    private static function nestedResumeOutputs(array $resumeOutputs, string $nodeId): array
+    {
+        $prefix = $nodeId.'/';
+        $len = strlen($prefix);
+        $nested = [];
+
+        foreach ($resumeOutputs as $address => $value) {
+            if (is_string($address) && str_starts_with($address, $prefix)) {
+                $nested[substr($address, $len)] = $value;
+            }
+        }
+
+        return $nested;
+    }
 }

@@ -78,8 +78,45 @@ it('streams child progress as tagged log lines against the SUBFLOW node', functi
         ->and($messages)->toContain('[onboarding] finished (ok)');
 
     // No child event leaks onto the parent feed under the child's own node id.
-    $foreign = array_filter($events, fn (RunEvent $e) => $e->nodeId !== null && $e->nodeId !== 'sf');
+    //
+    // The property is that nothing arrives under an id a consumer could mistake
+    // for a node of the PARENT graph. `child_out` would be such an id; `sf/x`
+    // cannot be, because a node id containing `/` is an address and the parent
+    // graph has none.
+    //
+    // So the filter names both allowed shapes rather than the single id it used
+    // to, and `checkpointsOnly` below is what stops that from being a loophole:
+    // it pins that everything namespaced under `sf` is a `node-checkpoint`,
+    // which every existing consumer ignores by switching on `type`.
+    $foreign = array_filter($events, fn (RunEvent $e) => $e->nodeId !== null
+        && $e->nodeId !== 'sf'
+        && ! str_starts_with($e->nodeId, 'sf/'));
     expect($foreign)->toBeEmpty();
+
+    $checkpointsOnly = array_filter(
+        $events,
+        fn (RunEvent $e) => $e->nodeId !== null
+            && str_starts_with($e->nodeId, 'sf/')
+            && $e->type !== RunEvent::NODE_CHECKPOINT,
+    );
+    expect($checkpointsOnly)->toBeEmpty('only checkpoints may be addressed at depth');
+});
+
+it('addresses a child checkpoint under the subflow node, never under the child id', function () {
+    // The guard for the rule above, pointed the other way: this fails if the
+    // qualification is ever dropped, which is what would re-expose a child's
+    // bare ids to a parent's consumer.
+    Capabilities::setWorkflowResolver(mapResolver(['onboarding' => childGraph()]));
+
+    subflowExec(['workflow' => 'onboarding'], events: $events);
+
+    $checkpoints = array_values(array_filter($events, fn (RunEvent $e) => $e->type === RunEvent::NODE_CHECKPOINT));
+    expect($checkpoints)->not->toBeEmpty('a child that completed must checkpoint');
+
+    foreach ($checkpoints as $checkpoint) {
+        expect($checkpoint->nodeId)->toStartWith('sf/')
+            ->and(substr_count((string) $checkpoint->nodeId, '/'))->toBe(1);
+    }
 });
 
 it('emits on `stream` in stream mode and on every port in both mode', function () {

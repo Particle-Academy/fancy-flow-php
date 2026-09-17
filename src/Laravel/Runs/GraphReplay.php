@@ -128,7 +128,18 @@ final class GraphReplay
 
         /** @var array<string,list<string>> $ports */
         $ports = [];
-        $collect = static function (RunEvent $event) use (&$ports): void {
+        /** @var array<string,mixed> $nested */
+        $nested = [];
+        $collect = static function (RunEvent $event) use (&$ports, &$nested): void {
+            // Work finished INSIDE a nesting node, at a `parent/child` address.
+            // Its value is the nested node's RESULT; resume republishes from it
+            // and recomputes ports itself, so no port list is kept.
+            if ($event->type === RunEvent::NODE_CHECKPOINT) {
+                $nested[(string) $event->nodeId] = $event->value;
+
+                return;
+            }
+
             if ($event->type === RunEvent::NODE_OUTPUT) {
                 $ports[(string) $event->nodeId][] = (string) $event->portId;
             }
@@ -145,7 +156,7 @@ final class GraphReplay
             eventNodes: $nodeId === null ? [] : [$nodeId],
         );
 
-        return ['result' => $result, 'ports' => $ports];
+        return ['result' => $result, 'ports' => $ports, 'nested' => $nested];
     }
 
     /** True when a run ended because the replay reached a node it does not own. */

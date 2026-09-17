@@ -57,6 +57,22 @@ final class ExecutionContext
          * without opting in.
          */
         public readonly ?ExecutorRegistry $executors = null,
+        /**
+         * Resume outputs belonging to work NESTED INSIDE this node, keyed by the
+         * nested node's own id with this node's prefix already stripped.
+         *
+         * Empty for every node that does not enclose a graph, which is almost
+         * all of them. A `subflow` hands this straight to the child runner as
+         * its `resumeOutputs`, and that is what stops a child node which already
+         * committed from executing a second time when the PARENT resumes — the
+         * defect measured at 2 in `tests/Durable/SubflowChildReplayTest.php`.
+         *
+         * The slicing rule lives in {@see \FancyFlow\Engine\FlowRunner}, once,
+         * so any enclosing executor gets it rather than each reimplementing it.
+         *
+         * @var array<string,mixed>
+         */
+        public readonly array $resumeOutputs = [],
     ) {}
 
     /** Stop the run. Throws {@see RunAborted}; the runner records the reason. */

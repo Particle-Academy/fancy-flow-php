@@ -10,6 +10,47 @@ upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A node inside a subflow that completed before a human gate is no longer
+  re-executed when the parent resumes** (#22). It ran a second time, so a child
+  node that WRITES wrote twice — measured at 2 in
+  `tests/Durable/SubflowChildReplayTest.php`, which was committed skipped with
+  that number and is now unskipped and green.
+
+  The cause was granularity, not addressing. `subflow` already descended the
+  identity path correctly, but the whole child collapsed into the ONE claim row
+  belonging to the subflow node, so nothing inside it was checkpointed
+  independently and no resume state travelled back down.
+
+  **Work at depth is now checkpointed at depth.** Each child node that completed
+  is recorded at a qualified `parent/child` address and republished on resume,
+  exactly as a top-level node is. This is the foundation #19 (per-item iteration)
+  is also sequenced behind — the same question, asked of a loop body instead of
+  a child graph.
+
+  **No migration.** The claim key is `(run_key, node_id)` and `node_id` now holds
+  an address for nested work; a top-level node keeps its bare id, so existing
+  rows and their behaviour are untouched.
+
+### Added
+
+- **`RunEvent::NODE_CHECKPOINT`** — work finished inside a nesting node,
+  addressed `parent/child`. Deliberately its own type rather than a
+  `node-output`: its `nodeId` is an ADDRESS, not a node of the graph being run,
+  and a consumer looking it up in the run's schema would find nothing. That is
+  the same failure a consumer already hit reading `awaiting_node` (#22), so it
+  is not repeated here — every existing consumer ignores this by switching on
+  `type`, and only the durable layer reads it.
+- **`ExecutionContext::$resumeOutputs`** — resume state for work nested inside
+  this node, keyed by the nested node's bare id with the prefix already
+  stripped. Empty for every node that does not enclose a graph. The slicing rule
+  lives once in `FlowRunner`, so any enclosing executor gets it.
+
+  **Both are additive.** A `resumeOutputs` map with no qualified keys behaves
+  exactly as before, which is what makes this safe to take on 0.57.x.
+
+
 ## 0.57.2 — 2026-09-16
 
 ### Fixed
