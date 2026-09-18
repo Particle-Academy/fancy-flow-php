@@ -225,7 +225,7 @@ it('lets a human gate one level down still decode at the top', function (): void
     // how a decorating change passes a suite that was meant to stop it.
     $pause = \FancyFlow\Runtime\Pause::decode((string) $result->error);
     expect($pause)->not->toBeNull();
-    expect($pause->nodeId)->toBe('gate');
+    expect($pause->nodeId)->toBe('sf/gate');
     expect($pause->awaiting)->toBe('approval');
 });
 

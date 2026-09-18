@@ -25,6 +25,8 @@ namespace FancyFlow\Laravel\Events;
 final class WorkflowSettled
 {
     public const COMPLETED = 'completed';
+    /** Finished with usable outputs and one or more contained failures. */
+    public const PARTIAL = 'partial';
     public const FAILED = 'failed';
     public const AWAITING_APPROVAL = 'awaiting_approval';
     public const AWAITING_INPUT = 'awaiting_input';
@@ -52,7 +54,7 @@ final class WorkflowSettled
     /** True when no further attempt will run for this outcome without new input. */
     public function isTerminal(): bool
     {
-        return in_array($this->outcome, [self::COMPLETED, self::FAILED, self::SKIPPED], true);
+        return in_array($this->outcome, [self::COMPLETED, self::PARTIAL, self::FAILED, self::SKIPPED], true);
     }
 
     /** True when the run stopped to wait on a human decision or submission. */

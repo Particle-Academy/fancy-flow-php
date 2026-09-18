@@ -79,6 +79,10 @@ final class RunOptions
          * @var list<string>|null
          */
         public readonly ?array $entryNodes = null,
+        /** Prefix for a node's durable address when this graph runs at depth. */
+        public readonly string $addressPrefix = '',
+        /** Whether a pre-qualified-era bare human answer is provably unambiguous here. */
+        public readonly bool $allowLegacyBareAddress = true,
     ) {
         $this->run = $run === null ? null : RunIdentity::from($run);
     }

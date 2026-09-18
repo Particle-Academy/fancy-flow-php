@@ -84,7 +84,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
         NodeKindRegistry $kinds,
     ): void {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || in_array($run->status, [WorkflowRun::COMPLETED, WorkflowRun::FAILED, WorkflowRun::SKIPPED], true)) {
+        if ($run === null || $run->isTerminal() || $run->status === WorkflowRun::SKIPPED) {
             return;
         }
 
@@ -199,7 +199,14 @@ final class AdvanceWorkflowJob implements ShouldQueue
         }
 
         if (Frontier::isComplete($graph, $state)) {
-            $this->complete($run, $outputs, $events, $cohort);
+            $this->complete(
+                $run,
+                $this->topLevelOutputs($graph, $outputs),
+                $outputs,
+                $rows,
+                $events,
+                $cohort,
+            );
 
             return;
         }
@@ -328,18 +335,41 @@ final class AdvanceWorkflowJob implements ShouldQueue
         }
     }
 
-    /** @param array<string,mixed> $outputs */
-    private function complete(WorkflowRun $run, array $outputs, Dispatcher $events, TriggerCohort $cohort): void
-    {
+    /**
+     * @param array<string,mixed> $outputs public top-level workflow outputs
+     * @param array<string,mixed> $checkpointOutputs complete durable checkpoint map
+     * @param iterable<WorkflowRunNode> $rows
+     */
+    private function complete(
+        WorkflowRun $run,
+        array $outputs,
+        array $checkpointOutputs,
+        iterable $rows,
+        Dispatcher $events,
+        TriggerCohort $cohort,
+    ): void {
+        $partialErrors = [];
+        foreach ($rows as $row) {
+            if ($row->status === WorkflowRunNode::COMPLETED && is_string($row->error) && $row->error !== '') {
+                $partialErrors[] = $row->error;
+            }
+        }
+        $partial = $partialErrors !== [];
+        $error = $partial ? implode("\n", array_values(array_unique($partialErrors))) : null;
+
         $run->forceFill([
-            'status' => WorkflowRun::COMPLETED,
+            'status' => $partial ? WorkflowRun::PARTIAL : WorkflowRun::COMPLETED,
             'outputs' => $outputs,
-            'node_outputs' => $outputs,
-            'error' => null,
+            'node_outputs' => $checkpointOutputs,
+            'error' => $error,
         ])->save();
 
-        $events->dispatch(new WorkflowFinished($this->runKey, true, $outputs));
-        $events->dispatch(new WorkflowSettled($this->runKey, WorkflowSettled::COMPLETED));
+        $events->dispatch(new WorkflowFinished($this->runKey, ! $partial, $outputs));
+        $events->dispatch(new WorkflowSettled(
+            $this->runKey,
+            $partial ? WorkflowSettled::PARTIAL : WorkflowSettled::COMPLETED,
+            $error,
+        ));
         $cohort->advance($run);
     }
 
@@ -353,6 +383,24 @@ final class AdvanceWorkflowJob implements ShouldQueue
     }
 
     /**
+     * Nested claim rows are resume checkpoints, not public workflow outputs.
+     *
+     * @param array<string,mixed> $outputs
+     * @return array<string,mixed>
+     */
+    private function topLevelOutputs(FlowGraph $graph, array $outputs): array
+    {
+        $topLevel = [];
+        foreach ($graph->nodes as $node) {
+            if (array_key_exists($node->id, $outputs)) {
+                $topLevel[$node->id] = $outputs[$node->id];
+            }
+        }
+
+        return $topLevel;
+    }
+
+    /**
      * Bookkeeping gave up.
      *
      * A run whose advance cannot run is finished whether or not anyone says so —
@@ -363,7 +411,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
     public function failed(Throwable $e): void
     {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || in_array($run->status, [WorkflowRun::COMPLETED, WorkflowRun::FAILED, WorkflowRun::SKIPPED], true)) {
+        if ($run === null || $run->isTerminal() || $run->status === WorkflowRun::SKIPPED) {
             return;
         }
 

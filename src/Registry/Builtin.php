@@ -315,12 +315,19 @@ final class Builtin
                 // Read from ForEachExecutor.php:25.
                 'outputShape' => [
                     ['path' => 'items', 'type' => 'array', 'description' => 'The list that was iterated.'],
+                    ['path' => 'results', 'type' => 'array', 'description' => 'Each iteration\'s node results, in item order.'],
+                    ['path' => 'failures', 'type' => 'array', 'description' => 'Failed items with their index and error.'],
                     ['path' => 'count', 'type' => 'number', 'description' => 'How many items it held.'],
                 ],
-                'description' => 'Publishes the resolved list and its size on BOTH `item` and `done`. Fan-out as DATA, not as jobs -- nothing runs per item.', 'icon' => '↻',
+                'description' => 'When `item` is wired, runs that reachable lane once per item, sequentially, then publishes `{items, results, count}` on `done`. With no `item` edge it publishes the list and count as data.', 'icon' => '↻',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'item', 'label' => 'item'], ['id' => 'done', 'label' => 'done']],
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'source', 'label' => 'List', 'example' => '{{ $json.users }}', 'required' => true],
+                    ['type' => 'select', 'key' => 'mode', 'label' => 'Mode', 'default' => 'iterate', 'options' => [
+                        ['label' => 'Iterate when item is wired', 'value' => 'iterate'],
+                        ['label' => 'Publish list as data', 'value' => 'collect'],
+                    ]],
+                    ['type' => 'number', 'key' => 'maxItems', 'label' => 'Maximum items', 'default' => 1000, 'min' => 1, 'max' => 10000],
                     ['type' => 'number', 'key' => 'concurrency', 'label' => 'Concurrency', 'default' => 1, 'min' => 1, 'max' => 50],
                 ],
             ],

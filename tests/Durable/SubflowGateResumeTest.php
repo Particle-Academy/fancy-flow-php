@@ -6,6 +6,7 @@ use FancyFlow\Capabilities\Capabilities;
 use FancyFlow\Capabilities\WorkflowResolutionFailure;
 use FancyFlow\Capabilities\WorkflowResolver;
 use FancyFlow\Laravel\Facades\FancyFlow;
+use FancyFlow\Laravel\Jobs\RunWorkflowJob;
 use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Workflow;
@@ -119,6 +120,50 @@ it('RESUMES when that gate is answered', function (): void {
     expect($run->status)->toBe(WorkflowRun::COMPLETED);
 });
 
+it('refuses a legacy bare answer when sibling subflows make it ambiguous', function (): void {
+    $run = FancyFlow::dispatch(
+        sgSchema(
+            [
+                sgNode('trigger', 'manual_trigger'),
+                sgNode('first', 'subflow', ['workflow' => 'child']),
+                sgNode('second', 'subflow', ['workflow' => 'child']),
+                sgNode('end', 'output'),
+            ],
+            [
+                ['id' => 'e1', 'source' => 'trigger', 'target' => 'first'],
+                ['id' => 'e2', 'source' => 'first', 'target' => 'second'],
+                ['id' => 'e3', 'source' => 'second', 'target' => 'end'],
+            ],
+        ),
+        ['trigger' => ['deal' => 42]],
+    )->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_APPROVAL)
+        ->and($run->awaiting_node)->toBe('first/gate');
+
+    // Both child graphs contain `gate`. A pre-qualified-era answer cannot be
+    // assigned safely, so it must satisfy neither occurrence.
+    $run->forceFill([
+        'approvals' => ['gate' => true],
+        'status' => WorkflowRun::PENDING,
+        'awaiting_node' => null,
+        'awaiting_kind' => null,
+        'awaiting_detail' => null,
+    ])->save();
+    RunWorkflowJob::enqueue($run);
+    $run->refresh();
+
+    expect($run->status)->toBe(WorkflowRun::AWAITING_APPROVAL)
+        ->and($run->awaiting_node)->toBe('first/gate');
+
+    $run->approve()->refresh();
+    expect($run->status)->toBe(WorkflowRun::AWAITING_APPROVAL)
+        ->and($run->awaiting_node)->toBe('second/gate');
+
+    $run->approve()->refresh();
+    expect($run->status)->toBe(WorkflowRun::COMPLETED);
+});
+
 // ---------------------------------------------------------------------------
 // The `user_input` shape — MOIC's reported one (status awaiting_input)
 // ---------------------------------------------------------------------------
@@ -171,7 +216,7 @@ it('resumes a user_input gate inside a subflow when the form is submitted', func
     $run->refresh();
 
     expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
-    expect($run->awaiting_node)->toBe('gate');
+    expect($run->awaiting_node)->toBe('call/gate');
 
     // The half MOIC reports missing: the answer must reach the child's gate.
     $run->submitInput(values: ['ok' => true]);

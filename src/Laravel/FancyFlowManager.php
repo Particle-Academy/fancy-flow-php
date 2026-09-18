@@ -122,9 +122,9 @@ final class FancyFlowManager
         // it opts out here and dispatches WorkflowFinished itself on completion.
         if ($emitTerminalEvents && $this->eventsEnabled()) {
             $this->events->dispatch(
-                $result->ok
-                    ? new WorkflowFinished($runId, true, $result->outputs)
-                    : new WorkflowFailed($runId, $result->error ?? 'error'),
+                $result->outcome === RunResult::FAILED
+                    ? new WorkflowFailed($runId, $result->error ?? 'error')
+                    : new WorkflowFinished($runId, $result->ok, $result->outputs),
             );
         }
 

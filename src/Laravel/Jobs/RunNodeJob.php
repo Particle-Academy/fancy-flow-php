@@ -20,6 +20,7 @@ use FancyFlow\NodeKindRegistry;
 use FancyFlow\Runtime\Pause;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\RunOptions;
+use FancyFlow\Runtime\RunResult;
 use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Schema\FlowNode;
 use Illuminate\Bus\Queueable;
@@ -119,7 +120,7 @@ final class RunNodeJob implements ShouldQueue
     public function handle(FancyFlowManager $flow, Dispatcher $events, NodeKindRegistry $kinds): void
     {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || in_array($run->status, [WorkflowRun::COMPLETED, WorkflowRun::FAILED, WorkflowRun::SKIPPED], true)) {
+        if ($run === null || $run->isTerminal() || $run->status === WorkflowRun::SKIPPED) {
             return;
         }
         if ($run->isAwaitingHuman()) {
@@ -231,7 +232,13 @@ final class RunNodeJob implements ShouldQueue
         // with the status, so there is no moment where it reads as done with
         // nothing to resume from.
         if (array_key_exists($nodeId, $result->outputs)) {
-            NodeClaims::complete($this->runKey, $nodeId, $result->outputs[$nodeId], $replay['ports'][$nodeId] ?? []);
+            NodeClaims::complete(
+                $this->runKey,
+                $nodeId,
+                $result->outputs[$nodeId],
+                $replay['ports'][$nodeId] ?? [],
+                $result->outcome === RunResult::PARTIAL ? $result->error : null,
+            );
 
             return WorkflowRunNode::COMPLETED;
         }

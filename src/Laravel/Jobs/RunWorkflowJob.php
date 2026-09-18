@@ -13,8 +13,10 @@ use FancyFlow\Laravel\Models\WorkflowRun;
 use FancyFlow\Laravel\Runs\RunSetup;
 use FancyFlow\Laravel\TriggerCohort;
 use FancyFlow\Runtime\Pause;
+use FancyFlow\Runtime\RunEvent;
 use FancyFlow\Runtime\RunIdentity;
 use FancyFlow\Runtime\RunOptions;
+use FancyFlow\Runtime\RunResult;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -109,7 +111,7 @@ final class RunWorkflowJob implements ShouldQueue
     public function handle(FancyFlowManager $flow, Dispatcher $events, TriggerCohort $cohort): void
     {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || $run->status === WorkflowRun::COMPLETED) {
+        if ($run === null || $run->isTerminal()) {
             return;
         }
 
@@ -141,7 +143,7 @@ final class RunWorkflowJob implements ShouldQueue
             // shared state. A pause is still holding it (a person is deciding),
             // and an ERRORED attempt may yet be retried — that one advances from
             // failed(), once the queue gives up for good.
-            if ($outcome === WorkflowSettled::COMPLETED) {
+            if (in_array($outcome, [WorkflowSettled::COMPLETED, WorkflowSettled::PARTIAL], true)) {
                 $cohort->advance($run);
             }
         }
@@ -182,8 +184,15 @@ final class RunWorkflowJob implements ShouldQueue
         );
         $executors = RunSetup::executors($flow, $run);
 
+        /** @var array<string,mixed> $nestedCheckpoints */
+        $nestedCheckpoints = [];
         $result = $flow->run(
             $run->schema,
+            onEvent: static function (RunEvent $event) use (&$nestedCheckpoints): void {
+                if ($event->type === RunEvent::NODE_CHECKPOINT && $event->nodeId !== null) {
+                    $nestedCheckpoints[$event->nodeId] = $event->value;
+                }
+            },
             options: $options,
             runId: $run->run_key,
             executors: $executors,
@@ -192,7 +201,11 @@ final class RunWorkflowJob implements ShouldQueue
 
         // Checkpoint the completed-node outputs regardless of outcome — this is
         // what a retry resumes from.
-        $run->forceFill(['node_outputs' => $result->outputs])->save();
+        $run->forceFill(['node_outputs' => array_replace(
+            $run->node_outputs ?? [],
+            $result->outputs,
+            $nestedCheckpoints,
+        )])->save();
 
         if ($result->ok) {
             $run->forceFill([
@@ -202,6 +215,19 @@ final class RunWorkflowJob implements ShouldQueue
             ])->save();
             $events->dispatch(new WorkflowFinished($run->run_key, true, $result->outputs));
             $outcome = WorkflowSettled::COMPLETED;
+
+            return;
+        }
+
+        if ($result->outcome === RunResult::PARTIAL) {
+            $settleError = $result->error ?? 'workflow completed partially';
+            $run->forceFill([
+                'status' => WorkflowRun::PARTIAL,
+                'outputs' => $result->outputs,
+                'error' => $settleError,
+            ])->save();
+            $events->dispatch(new WorkflowFinished($run->run_key, false, $result->outputs));
+            $outcome = WorkflowSettled::PARTIAL;
 
             return;
         }

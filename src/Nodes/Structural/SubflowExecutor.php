@@ -14,8 +14,10 @@ use FancyFlow\Nodes\Support\ExecutorDeps;
 use FancyFlow\Registry\Builtin;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\Pause;
+use FancyFlow\Runtime\PartialResult;
 use FancyFlow\Runtime\Port;
 use FancyFlow\Runtime\RunEvent;
+use FancyFlow\Runtime\RunIdentity;
 use FancyFlow\Runtime\RunOptions;
 use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Schema\PortDescriptor;
@@ -155,11 +157,15 @@ final class SubflowExecutor implements NodeExecutor
         // in the parent graph, and a consumer keying on node id would collide.
         // Only the tagged human-readable mirror goes out, and only when asked.
         $parentId = $ctx->node->id;
-        $forward = $streaming
-            ? static function (RunEvent $event) use ($ctx, $ref, $parentId): void {
+        $checkpointPrefix = RunIdentity::escapeSegment($parentId).'/';
+        $forward = static function (RunEvent $event) use ($ctx, $ref, $parentId, $streaming, $checkpointPrefix): void {
+            if ($event->type === RunEvent::NODE_CHECKPOINT && $event->nodeId !== null) {
+                $ctx->emit(RunEvent::nodeCheckpoint($checkpointPrefix.$event->nodeId, $event->value));
+            }
+            if ($streaming) {
                 $ctx->emit(RunEvent::log('info', "[{$ref}] ".self::describe($event), $parentId));
             }
-            : null;
+        };
 
         $result = (new FlowRunner())->run(
             $child,
@@ -190,6 +196,8 @@ final class SubflowExecutor implements NodeExecutor
                 // a first attempt; on a resume after a gate it is what stops the
                 // child re-running work it already committed.
                 resumeOutputs: $ctx->resumeOutputs,
+                addressPrefix: $ctx->nodeAddress().'/',
+                allowLegacyBareAddress: $ctx->allowsLegacyNestedAddress(),
             ),
         );
 
@@ -211,10 +219,13 @@ final class SubflowExecutor implements NodeExecutor
         // child parked on a human gate still reports everything it finished
         // first. That is exactly the case this exists for.
         foreach ($result->outputs as $childId => $childResult) {
-            $ctx->emit(RunEvent::nodeCheckpoint($parentId.'/'.$childId, $childResult));
+            $ctx->emit(RunEvent::nodeCheckpoint(
+                $checkpointPrefix.RunIdentity::escapeSegment((string) $childId),
+                $childResult,
+            ));
         }
 
-        if (! $result->ok) {
+        if (! $result->ok && ! $result->isPartial()) {
             $reason = (string) ($result->error ?? 'unknown error');
 
             // A PAUSE IS NOT A FAILURE, and it travels this same channel.
@@ -243,11 +254,19 @@ final class SubflowExecutor implements NodeExecutor
 
         // `stream` alone still emits a final value on `stream` so downstream
         // nodes have something to run on; `both` publishes on every port.
-        return match ($mode) {
+        $value = match ($mode) {
             'stream' => Port::only('stream', $result->outputs),
             'both' => $result->outputs,
             default => Port::only('out', $result->outputs),
         };
+
+        return $result->isPartial()
+            ? new PartialResult($value, sprintf(
+                'subflow "%s" completed partially: %s',
+                $ref,
+                (string) ($result->error ?? 'child work failed'),
+            ))
+            : $value;
     }
 
     /** A child event rendered as one line of parent-visible progress. */

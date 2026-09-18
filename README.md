@@ -91,6 +91,23 @@ default executor for each):
 Plus the structural `note` (never executed) and `subgraph` (runs a nested flow),
 available via `Builtin::register($registry, withStructural: true)`.
 
+`for_each` derives iteration from the graph. When its `item` port has a
+downstream lane, that lane runs sequentially once per resolved item and `done`
+publishes `{items, results, failures, count}` after the last one. Each result is
+the map of node outputs from that item; a failed item leaves `null` at its index
+and is described in `failures`, while later items continue. Iteration defaults
+to at most 1,000 items and `maxItems` may set a lower cap or raise it as far as
+10,000. A human wait inside the lane is addressed by
+occurrence and resumes without replaying completed body nodes. With no `item`
+edge it keeps the data-only behavior; set `mode: collect` to opt out explicitly
+while leaving an `item` edge wired.
+
+If any item fails, downstream nodes still receive the aggregate so they can
+render or persist the complete batch report, but the run settles as `partial`
+(`RunResult::PARTIAL`, `ok === false`) rather than success. Durable runs keep
+their outputs and do not retry already-successful items; hosts should handle
+`WorkflowRun::PARTIAL` as a distinct terminal state.
+
 ### Kind ids are namespaced
 
 A kind's `name` is its **canonical** id and is what gets written into saved
@@ -291,8 +308,8 @@ last completed node rather than restarting:
 
 ```php
 $run = FancyFlow::dispatch($schema, ['trigger-1' => ['payload' => $payload]]);
-$run->status;   // pending → running → completed | failed | awaiting_approval | awaiting_input
-$run->outputs;  // once completed
+$run->status;   // pending → running → completed | partial | failed | awaiting_approval | awaiting_input
+$run->outputs;  // on completed or partial
 ```
 
 A `human_approval` node **pauses** the run (status `awaiting_approval`) instead of

@@ -10,6 +10,59 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.59.0 — 2026-09-18
+
+### Added
+
+- **`for_each` now executes its `item` lane once per item** (#19). Iteration is
+  derived from the graph: wiring `item` opts into sequential execution; an
+  unwired node keeps the data-only behavior, and `mode: collect` is the explicit
+  escape hatch. After the final item, `done` publishes
+  `{items, results, failures, count}`
+  once, with every iteration's node results addressable in item order.
+- One failed item no longer costs the remaining work: its result slot is `null`,
+  `failures` names its index, item, and error, and iteration continues. A
+  configurable `maxItems` cap defaults to 1,000 and cannot exceed 10,000.
+- A run containing failed items now settles as the distinct terminal `partial`
+  outcome instead of reporting plain success. Core returns
+  `RunResult::PARTIAL` with `ok: false`; both durable drivers retain the final
+  outputs, avoid retrying successful items, and persist `WorkflowRun::PARTIAL` /
+  `WorkflowSettled::PARTIAL` for hosts to handle explicitly.
+- **Per-item human waits have occurrence-qualified addresses.** A gate inside
+  item 2 parks as `each/1/gate`, so approving item 1 cannot silently approve the
+  rest. Completed body nodes are checkpointed as `each/1/node` and are
+  republished on resume; a write before a later gate does not execute twice.
+- Nested address segments are escaped with the same reversible encoding as run
+  identities, so delimiter-bearing ids cannot make `a` + `b/c` collide with
+  `a/b` + `c`. Subflow/subgraph prefixes propagate at every depth. A legacy bare
+  human answer is accepted only where the execution context proves there is one
+  possible occurrence; iterated occurrences and sibling structural nodes pause
+  for qualified answers rather than letting one old answer satisfy several.
+- A graph now fails before execution when a top-level node id impersonates an
+  address inside a structural node (for example `each/0/write` beside `each`),
+  instead of letting nested progress silently skip the top-level executor.
+- The single-job durable driver now persists nested checkpoint events as well as
+  top-level outputs. A pause inside an iteration therefore resumes without
+  replaying already-completed body work under either queue driver.
+
+### Changed
+
+- **BREAKING:** a `for_each` with an outgoing `item` edge now iterates instead
+  of publishing the whole list to that edge once. This is the behavior the node
+  originally claimed to have. Set `mode: collect` only when the old whole-list
+  delivery was intentional.
+- The development pin moves to `particle-academy/fancy-conformance` 0.31, whose
+  shared declaration table requires the new `results` and `failures` outputs.
+
+### Verification
+
+- Focused core and per-node durable coverage asserts three executions, distinct
+  idempotency keys, three separately parked approvals, collected results plus
+  count, no repeated writes across resumes under both queue drivers, partial
+  settlement under both drivers, an iterated subflow gate, sibling-subflow
+  legacy-answer ambiguity, delimiter-bearing checkpoint resume, and rejection
+  of a top-level id that aliases a nested checkpoint address.
+
 ## 0.58.0 — 2026-09-17
 
 ### Fixed

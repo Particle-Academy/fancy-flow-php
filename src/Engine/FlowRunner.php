@@ -13,7 +13,9 @@ use FancyFlow\Registry\KindId;
 use FancyFlow\Registry\PortResolution;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\NodeStatus;
+use FancyFlow\Runtime\PartialResult;
 use FancyFlow\Runtime\RunEvent;
+use FancyFlow\Runtime\RunIdentity;
 use FancyFlow\Runtime\RunOptions;
 use FancyFlow\Runtime\WorkflowProps;
 use FancyFlow\Runtime\RunResult;
@@ -67,6 +69,8 @@ final class FlowRunner
         $completed = [];
         /** @var list<string> $errors */
         $errors = [];
+        /** @var list<string> $partialErrors */
+        $partialErrors = [];
         /** @var list<RunEvent> $events */
         $events = [];
 
@@ -81,6 +85,12 @@ final class FlowRunner
         $order = $this->topoSort($graph);
         if ($order === null) {
             $msg = 'Cycle detected in flow graph — aborting.';
+            $emit(RunEvent::runError($msg));
+
+            return new RunResult(false, $outputs, $msg, $events);
+        }
+
+        if (($msg = $this->checkpointAddressCollision($graph)) !== null) {
             $emit(RunEvent::runError($msg));
 
             return new RunResult(false, $outputs, $msg, $events);
@@ -131,8 +141,11 @@ final class FlowRunner
             // Resume: a node completed in a prior run is not re-executed — its
             // stored output is republished on its ports (reproducing the same
             // routing) so downstream nodes see identical inputs.
-            if (array_key_exists($node->id, $resumeOutputs)) {
-                $this->publish($node, $resumeOutputs[$node->id], $outputs, $portValues, $completed, $emit, resumed: true, kinds: $executors->kinds());
+            $resumeKey = $options->addressPrefix === ''
+                ? $node->id
+                : RunIdentity::escapeSegment($node->id);
+            if (array_key_exists($resumeKey, $resumeOutputs)) {
+                $this->publish($node, $resumeOutputs[$resumeKey], $outputs, $portValues, $completed, $emit, resumed: true, kinds: $executors->kinds());
 
                 continue;
             }
@@ -239,8 +252,23 @@ final class FlowRunner
 
             try {
                 self::announce($emit, $node, 'start');
-                $ctx = new ExecutionContext($node, $inputs, Closure::fromCallable($emit), $options->depth, $options->run, $executors, self::nestedResumeOutputs($resumeOutputs, $node->id));
+                $ctx = new ExecutionContext(
+                    $node,
+                    $inputs,
+                    Closure::fromCallable($emit),
+                    $options->depth,
+                    $options->run,
+                    $executors,
+                    self::nestedResumeOutputs($resumeOutputs, $node->id),
+                    $graph,
+                    $options->addressPrefix.RunIdentity::escapeSegment($node->id),
+                    $options->allowLegacyBareAddress,
+                );
                 $result = $exec($ctx);
+                if ($result instanceof PartialResult) {
+                    $partialErrors[] = $result->error;
+                    $result = $result->value;
+                }
                 $this->publish($node, $result, $outputs, $portValues, $completed, $emit, kinds: $executors->kinds());
                 // Success path only, and deliberately so: a `stoppingMsg` of
                 // "Analysis complete" emitted after a throw tells a human the
@@ -278,10 +306,19 @@ final class FlowRunner
             }
         }
 
-        $ok = $errors === [];
+        $outcome = $errors !== []
+            ? RunResult::FAILED
+            : ($partialErrors !== [] ? RunResult::PARTIAL : RunResult::COMPLETED);
+        $ok = $outcome === RunResult::COMPLETED;
         $emit(RunEvent::runEnd($ok));
 
-        return new RunResult($ok, $outputs, $ok ? null : $errors[0], $events);
+        return new RunResult(
+            $ok,
+            $outputs,
+            $errors[0] ?? $partialErrors[0] ?? null,
+            $events,
+            $outcome,
+        );
     }
 
     /**
@@ -690,7 +727,7 @@ final class FlowRunner
      */
     private static function nestedResumeOutputs(array $resumeOutputs, string $nodeId): array
     {
-        $prefix = $nodeId.'/';
+        $prefix = RunIdentity::escapeSegment($nodeId).'/';
         $len = strlen($prefix);
         $nested = [];
 
@@ -701,5 +738,49 @@ final class FlowRunner
         }
 
         return $nested;
+    }
+
+    /**
+     * Reject a top-level id that could be mistaken for progress inside a
+     * structural node. Top-level checkpoints retain raw ids for compatibility;
+     * nested addresses encode each segment and join them with `/`. Without this
+     * guard, a node literally named `each/0/write` could consume the checkpoint
+     * emitted by item 0's `write` node and silently skip its own executor.
+     */
+    private function checkpointAddressCollision(FlowGraph $graph): ?string
+    {
+        $iteratingNodes = [];
+        foreach ($graph->edges as $edge) {
+            if (($edge->sourceHandle ?? 'out') === 'item') {
+                $iteratingNodes[$edge->source] = true;
+            }
+        }
+
+        foreach ($graph->nodes as $parent) {
+            $kind = $parent->kind();
+            $expands = $kind !== null && (
+                KindId::matches($kind, 'subflow')
+                || KindId::matches($kind, 'subgraph')
+                || (KindId::matches($kind, 'for_each')
+                    && $parent->configValue('mode') !== 'collect'
+                    && isset($iteratingNodes[$parent->id]))
+            );
+            if (! $expands) {
+                continue;
+            }
+
+            $prefix = RunIdentity::escapeSegment($parent->id).'/';
+            foreach ($graph->nodes as $node) {
+                if ($node !== $parent && str_starts_with($node->id, $prefix)) {
+                    return sprintf(
+                        'Node id "%s" aliases the checkpoint namespace of structural node "%s"; rename one before running.',
+                        $node->id,
+                        $parent->id,
+                    );
+                }
+            }
+        }
+
+        return null;
     }
 }

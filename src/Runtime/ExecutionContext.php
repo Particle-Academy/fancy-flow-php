@@ -7,6 +7,8 @@ namespace FancyFlow\Runtime;
 use Closure;
 use FancyFlow\Exceptions\RunAborted;
 use FancyFlow\ExecutorRegistry;
+use FancyFlow\Registry\KindId;
+use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Schema\FlowNode;
 
 /**
@@ -73,7 +75,51 @@ final class ExecutionContext
          * @var array<string,mixed>
          */
         public readonly array $resumeOutputs = [],
+        /** The graph this node belongs to. Structural executors use it to derive nested lanes. */
+        public readonly ?FlowGraph $graph = null,
+        /** Qualified durable address; the bare node id at the top level. */
+        public readonly ?string $address = null,
+        /** Whether this execution is the only possible target for a legacy bare answer. */
+        public readonly bool $allowLegacyBareAddress = true,
     ) {}
+
+    public function nodeAddress(): string
+    {
+        return $this->address ?? $this->node->id;
+    }
+
+    /**
+     * Whether a child graph is the sole address-producing occurrence here.
+     *
+     * A pre-qualified answer such as `gate` is safe to inherit only when this
+     * graph has one structural expansion point. Two sibling subflows/loops can
+     * both contain `gate`; accepting the bare key in either would let one old
+     * answer satisfy both occurrences. Conservatively refusing the fallback
+     * for graphs with multiple expansion points preserves safety even when the
+     * children's schemas are resolved dynamically.
+     */
+    public function allowsLegacyNestedAddress(): bool
+    {
+        if (! $this->allowLegacyBareAddress || $this->graph === null) {
+            return false;
+        }
+
+        $expansionPoints = 0;
+        foreach ($this->graph->nodes as $node) {
+            $kind = $node->kind();
+            if ($kind === null || (! KindId::matches($kind, 'for_each')
+                && ! KindId::matches($kind, 'subflow')
+                && ! KindId::matches($kind, 'subgraph'))) {
+                continue;
+            }
+            $expansionPoints++;
+            if ($expansionPoints > 1) {
+                return false;
+            }
+        }
+
+        return $expansionPoints === 1;
+    }
 
     /** Stop the run. Throws {@see RunAborted}; the runner records the reason. */
     public function abort(?string $reason = null): never
@@ -97,7 +143,7 @@ final class ExecutionContext
      */
     public function pauseForHuman(string $awaiting, mixed $detail = null): never
     {
-        $this->abort(Pause::encode(new PauseSignal($this->node->id, $awaiting, $detail)));
+        $this->abort(Pause::encode(new PauseSignal($this->nodeAddress(), $awaiting, $detail)));
     }
 
     /** Stream a status update or partial output to the run feed. */

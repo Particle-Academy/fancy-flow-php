@@ -41,10 +41,18 @@ final class DurableApprovalExecutor implements NodeExecutor
         // meant anything that pre-filled that port — initial inputs, an upstream
         // edge, or a decision recorded before the node ran — counted as a human
         // having approved, and the run sailed through the gate.
-        $nodeId = $ctx->node->id;
+        $nodeId = $ctx->nodeAddress();
+        $legacyNodeId = $ctx->node->id;
 
         if (array_key_exists($nodeId, $this->approvals)) {
             $decision = $this->approvals[$nodeId];
+        } elseif ($ctx->allowLegacyBareAddress
+            && $nodeId !== $legacyNodeId
+            && array_key_exists($legacyNodeId, $this->approvals)) {
+            // Resume a run parked by a version that stored nested answers under
+            // the child's bare id, but only where the execution context proves
+            // there is one possible occurrence. New pauses are always qualified.
+            $decision = $this->approvals[$legacyNodeId];
         } else {
             // Opt-in, off by default — see the note in DurableUserInputExecutor.
             // Worth weighing harder here than for a form: this one lets an

@@ -11,6 +11,14 @@ namespace FancyFlow\Runtime;
  */
 final class RunResult
 {
+    public const COMPLETED = 'completed';
+
+    public const PARTIAL = 'partial';
+
+    public const FAILED = 'failed';
+
+    public readonly string $outcome;
+
     /**
      * @param array<string,mixed> $outputs Executor results keyed by node id.
      * @param list<RunEvent>       $events  The full event stream, in order.
@@ -20,7 +28,15 @@ final class RunResult
         public readonly array $outputs = [],
         public readonly ?string $error = null,
         public readonly array $events = [],
-    ) {}
+        ?string $outcome = null,
+    ) {
+        $this->outcome = $outcome ?? ($ok ? self::COMPLETED : self::FAILED);
+    }
+
+    public function isPartial(): bool
+    {
+        return $this->outcome === self::PARTIAL;
+    }
 
     public function output(string $nodeId, mixed $default = null): mixed
     {

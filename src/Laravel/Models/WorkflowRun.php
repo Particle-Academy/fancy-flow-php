@@ -41,6 +41,8 @@ class WorkflowRun extends Model
      */
     public const AWAITING_HUMAN = 'awaiting_human';
     public const COMPLETED = 'completed';
+    /** Terminal with usable outputs and one or more contained failures. */
+    public const PARTIAL = 'partial';
     public const FAILED = 'failed';
 
     /**
@@ -102,7 +104,7 @@ class WorkflowRun extends Model
 
     public function isTerminal(): bool
     {
-        return in_array($this->status, [self::COMPLETED, self::FAILED], true);
+        return in_array($this->status, [self::COMPLETED, self::PARTIAL, self::FAILED], true);
     }
 
     public function isAwaitingApproval(): bool

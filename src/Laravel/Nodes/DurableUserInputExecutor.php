@@ -55,9 +55,13 @@ final class DurableUserInputExecutor implements NodeExecutor
         //
         // Now the only thing that resumes this node is a recorded submission for
         // THIS node. Pre-filled inputs never satisfy it.
-        $nodeId = $ctx->node->id;
+        $nodeId = $ctx->nodeAddress();
+        $legacyNodeId = $ctx->node->id;
 
-        if (! array_key_exists($nodeId, $this->submissions)) {
+        if (! array_key_exists($nodeId, $this->submissions)
+            && ! ($ctx->allowLegacyBareAddress
+                && $nodeId !== $legacyNodeId
+                && array_key_exists($legacyNodeId, $this->submissions))) {
             // Opt-in escape hatch, off by default: let a value already on the
             // `values` port stand in for the person. This is the old behaviour,
             // and it is genuinely wanted for a step that is a human form when a
@@ -80,7 +84,9 @@ final class DurableUserInputExecutor implements NodeExecutor
         // An empty form ([]) is a real answer — it resumes rather than pausing
         // again. That distinction survives because it is now carried by whether
         // the key exists, not by whether the value is null.
-        return $this->submissions[$nodeId];
+        return array_key_exists($nodeId, $this->submissions)
+            ? $this->submissions[$nodeId]
+            : $this->submissions[$legacyNodeId];
     }
 
     /**

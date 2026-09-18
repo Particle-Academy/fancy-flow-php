@@ -102,13 +102,13 @@ final class NodeClaims
      *
      * @param list<string> $ports the output ports the result activated
      */
-    public static function complete(string $runKey, string $nodeId, mixed $output, array $ports): void
+    public static function complete(string $runKey, string $nodeId, mixed $output, array $ports, ?string $error = null): void
     {
         self::settle($runKey, $nodeId, [
             'status' => WorkflowRunNode::COMPLETED,
             'output' => $output,
             'ports' => array_values($ports),
-            'error' => null,
+            'error' => $error,
         ]);
     }
 
