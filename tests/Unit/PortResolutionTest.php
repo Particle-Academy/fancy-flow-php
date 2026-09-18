@@ -112,6 +112,15 @@ it('treats an unregistered kind as publishing exactly `out`', function () {
     expect(PortResolution::possible(new FlowNode('u', 'nope'), null, []))->toBe(['out']);
 });
 
+it('keeps an undeclared output list distinct from an explicit terminal declaration', function () {
+    $kinds = NodeKindRegistry::default();
+
+    expect($kinds->get('transform')?->outputs)->toBeNull()
+        ->and(PortResolution::possible(new FlowNode('t', 'transform'), $kinds->get('transform')))->toBe(['out'])
+        ->and($kinds->get('output')?->outputs)->toBe([])
+        ->and(PortResolution::possible(new FlowNode('o', 'output'), $kinds->get('output')))->toBe([]);
+});
+
 it('does NOT warn about an edge leaving a config-derived port', function () {
     // The end-to-end consequence, and the bug as it was actually reported: an
     // agent configured three cases through the MCP -- which offered `case_c` --

@@ -81,18 +81,18 @@ final class PortResolution
             return $derived;
         }
 
-        // An empty declaration means NO PORTS, and it has to mean that here as
-        // well as in `activatedPorts`. This line read `$declared === [] ?
-        // ['out'] : $declared` until 0.56.0 — the same empty-to-`out` collapse
-        // the runner used to make, in the other of the two gates that shape a
-        // port set.
+        // `null` means the kind never declared a port list, so the engine's
+        // historical/default `out` applies. An explicit empty declaration means
+        // NO PORTS. Keep those states distinct: mapping `null` through `?? []`
+        // above is useful for config-derived kinds, but it cannot decide this
+        // final fallback.
         //
         // Fixing only the runner would have been half a fix, and the dangerous
         // half: the node would publish nothing while this lookup still reported
         // `out` as deliverable, so the undelivered-edge warning would stay
         // SILENT for exactly the edge that had just stopped delivering. The
         // owner's ruling was strict-but-LOUD, and the loudness lives here.
-        return $declared;
+        return $kind->outputs === null ? ['out'] : $declared;
     }
 
     /**

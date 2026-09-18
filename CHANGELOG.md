@@ -10,6 +10,16 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.59.1 — 2026-09-18
+
+### Fixed
+
+- Preserve the distinction between a kind that does not declare output ports and a kind that explicitly declares none. Undeclared kinds again receive the default `out` port, while terminal kinds remain terminal.
+
+### Upgrade
+
+- No consumer changes are required. Upgrade normally; this restores the documented default-port behavior used by authoring consumers such as `fancy-flow-mcp`.
+
 ## 0.59.0 — 2026-09-18
 
 ### Added
