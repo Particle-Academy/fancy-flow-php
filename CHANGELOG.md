@@ -10,6 +10,42 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.60.1 — 2026-09-20
+
+### Added
+
+- **`humanValues()` and `humanApproved()`** — the payload accessors a host
+  migrating off `$ctx->inputs['values']` actually wants.
+
+  `humanAnswer()` returns the engine's RECORD (`['values' => …]`,
+  `['approved' => bool]`); the legacy `values` input port carried the values
+  themselves. **0.60.0's docblock and changelog both showed `return $answer;`,
+  and that is a silent behaviour change.** A consumer measured it on eight
+  cases: the keys their executors read moved one level down, their decision
+  field read as absent, six runs took the other branch and **COMPLETED having
+  skipped the step after the gate.** Green, no error anywhere.
+
+  `humanApproved()` returns `?bool` deliberately. **Branch on `!== null`, never
+  on truthiness** — `false` is a rejection and `null` is silence, and
+  conflating them pauses an answered node forever.
+
+### Fixed
+
+- The `humanAnswer()` docblock now shows the WRONG usage first, labelled, then
+  the right one. The 0.60.0 example was the defect: it documented which seam to
+  call and not what shape comes back — the same family as the schema gaps in
+  #24, where the tooling describes the editor and never the value.
+
+### Upgrade
+
+- **From 0.60.0:** if you adopted `return $ctx->humanAnswer();`, switch to
+  `humanValues()` (forms) or `humanApproved()` (approvals). If your runs went
+  green immediately after adopting the seam, **check that the step after the
+  gate actually ran** — that is what this failure looks like.
+- `humanAnswer()` is unchanged and still returns the record. Nothing that
+  already unwraps it needs to change.
+
+
 ## 0.60.0 — 2026-09-20
 
 ### Added

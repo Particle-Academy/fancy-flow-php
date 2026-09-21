@@ -482,3 +482,47 @@ it('runs a reusable Op with a form, called as a subflow, doing its pre-form work
     //    answer. 2 here is a duplicate row in a tenant's database.
     expect($writes)->toBe(1, 'pre-form work must not repeat when the parent resumes');
 });
+
+/**
+ * The payload accessors return what the legacy `values` port carried.
+ *
+ * `humanAnswer()` returns the engine's RECORD — `['values' => …]` — while the
+ * legacy `$ctx->inputs['values']` port carried the values themselves. The
+ * 0.60.0 docblock and changelog both showed `return $answer;`, which is a
+ * SILENT behaviour change for a migrating host: the keys it reads move one
+ * level down, its decision field reads as absent, and the run COMPLETES having
+ * skipped the step after the gate. Green, with no error anywhere.
+ *
+ * A consumer hit exactly that on 6 of 8 cases. These pin the shapes so the
+ * documented migration and the code cannot drift apart again.
+ */
+it('hands back the form payload, not the record that wraps it', function (): void {
+    $ctx = new \FancyFlow\Runtime\ExecutionContext(
+        node: new \FancyFlow\Schema\FlowNode(id: 'gate', type: 'user_input'),
+        inputs: [],
+        emit: static fn () => null,
+        humanAnswers: ['gate' => ['values' => ['decision' => 'approved', 'note' => 'ok']]],
+    );
+
+    expect($ctx->humanValues())->toBe(['decision' => 'approved', 'note' => 'ok'])
+        ->and($ctx->humanAnswer())->toBe(['values' => ['decision' => 'approved', 'note' => 'ok']])
+        ->and($ctx->humanApproved())->toBeNull();
+});
+
+it('distinguishes a REJECTION from silence', function (): void {
+    $make = fn (array $answers) => new \FancyFlow\Runtime\ExecutionContext(
+        node: new \FancyFlow\Schema\FlowNode(id: 'gate', type: 'human_approval'),
+        inputs: [],
+        emit: static fn () => null,
+        humanAnswers: $answers,
+    );
+
+    // false is a DECISION. Branching on truthiness would read it as
+    // un-answered and pause the node again, forever.
+    expect($make(['gate' => ['approved' => false]])->humanApproved())->toBeFalse();
+    expect($make(['gate' => ['approved' => true]])->humanApproved())->toBeTrue();
+    expect($make([])->humanApproved())->toBeNull();
+
+    // A form answer is not an approval, and must not be coerced into one.
+    expect($make(['gate' => ['values' => ['a' => 1]]])->humanApproved())->toBeNull();
+});

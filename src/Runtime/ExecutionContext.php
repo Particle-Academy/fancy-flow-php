@@ -106,12 +106,36 @@ final class ExecutionContext
      * a subflow parked, accepted its answer, and re-parked forever
      * (fancy-flow-php#22). Any executor can now do:
      *
+     * **Returns the RECORD, not the payload** — `['values' => …]` for a form,
+     * `['approved' => bool]` for an approval. That distinction is load-bearing
+     * and this example used to get it wrong:
+     *
      * ```php
+     * // WRONG, and it fails SILENTLY. The legacy `values` port handed the
+     * // values themselves, so a host migrating to this found `$values['x']`
+     * // suddenly absent, read that as a rejection, took the other branch, and
+     * // the run went GREEN having skipped the step after the gate.
      * if (($answer = $ctx->humanAnswer()) !== null) {
      *     return $answer;
      * }
+     * ```
+     *
+     * Use the payload accessors instead, which is what a migrating host wants:
+     *
+     * ```php
+     * if (($values = $ctx->humanValues()) !== null) {
+     *     return $values;                       // same shape the `values` port gave
+     * }
      *
      * $ctx->pauseForHuman('input', $detail);
+     * ```
+     *
+     * ```php
+     * if (($approved = $ctx->humanApproved()) !== null) {
+     *     return Port::branch($approved ? 'approved' : 'rejected', null);
+     * }
+     *
+     * $ctx->pauseForHuman('approval', $detail);
      * ```
      *
      * Keyed by ADDRESS, so it works unchanged at depth: a gate inside `call`
@@ -130,6 +154,40 @@ final class ExecutionContext
     public function humanAnswer(): mixed
     {
         return $this->humanAnswers[$this->answerKey()] ?? null;
+    }
+
+    /**
+     * The form payload of this node's answer — the shape the legacy `values`
+     * input port carried, so a host migrating off `$ctx->inputs['values']`
+     * swaps one for the other with no change in meaning.
+     *
+     * Null when nothing has been answered AND when the recorded answer is an
+     * approval rather than a form.
+     */
+    public function humanValues(): mixed
+    {
+        $answer = $this->humanAnswer();
+
+        return is_array($answer) ? ($answer['values'] ?? null) : null;
+    }
+
+    /**
+     * The decision of this node's answer, or null if it has not been answered
+     * (or was answered with a form rather than an approval).
+     *
+     * Null-vs-false matters here: `false` is a REJECTION, `null` is silence.
+     * Branch on `!== null`, never on truthiness, or a rejection reads as
+     * un-answered and the node pauses again forever.
+     */
+    public function humanApproved(): ?bool
+    {
+        $answer = $this->humanAnswer();
+
+        if (! is_array($answer) || ! array_key_exists('approved', $answer)) {
+            return null;
+        }
+
+        return (bool) $answer['approved'];
     }
 
     /** Whether an answer has been recorded, even one whose value is null. */
