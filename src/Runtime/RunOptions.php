@@ -83,6 +83,24 @@ final class RunOptions
         public readonly string $addressPrefix = '',
         /** Whether a pre-qualified-era bare human answer is provably unambiguous here. */
         public readonly bool $allowLegacyBareAddress = true,
+        /**
+         * Human answers this run has recorded, keyed by node ADDRESS.
+         *
+         * Carried so that ANY pausing executor can ask whether its answer has
+         * arrived -- see {@see ExecutionContext::humanAnswer()}. Delivery used
+         * to happen only by substituting the two builtin human executors for
+         * ones holding this map, which by construction could not serve a kind
+         * the package does not know by name: a host-registered gate parked,
+         * accepted its answer, and re-parked forever (fancy-flow-php#22).
+         *
+         * Keyed by address rather than bare node id, and passed to a nested run
+         * UNCHANGED -- unlike `resumeOutputs`, which is sliced, because an
+         * address is already absolute. `call/gate` means the same thing in the
+         * child as in the parent, which is what lets a gate at depth resume.
+         *
+         * @var array<string,mixed>
+         */
+        public readonly array $humanAnswers = [],
     ) {
         $this->run = $run === null ? null : RunIdentity::from($run);
     }

@@ -256,6 +256,9 @@ final class AdvanceWorkflowJob implements ShouldQueue
                 entryNodes: $run->entry_nodes,
                 props: RunSetup::props($run),
                 resumeOutputs: $checkpoint,
+                // Open delivery: any pausing executor can read its own answer,
+                // not just the two kinds we substitute for (#22).
+                humanAnswers: RunSetup::humanAnswers($run),
             ),
             runId: $run->run_key,
         );

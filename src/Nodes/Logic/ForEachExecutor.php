@@ -84,6 +84,10 @@ final class ForEachExecutor implements NodeExecutor
                     depth: $ctx->depth + 1,
                     run: $ctx->run?->descend($ctx->node->id, $index),
                     resumeOutputs: $this->iterationResumeOutputs($ctx->resumeOutputs, $index),
+                    // Unchanged, unlike resumeOutputs: an answer is keyed by an
+                    // ABSOLUTE address, so the child looks up the same
+                    // `call/gate` / `each/1/gate` the parent recorded.
+                    humanAnswers: $ctx->humanAnswers,
                     addressPrefix: $ctx->nodeAddress().'/'.$index.'/',
                     allowLegacyBareAddress: $ctx->allowsLegacyNestedAddress() && count($items) === 1,
                 ),

@@ -263,6 +263,11 @@ final class FlowRunner
                     $graph,
                     $options->addressPrefix.RunIdentity::escapeSegment($node->id),
                     $options->allowLegacyBareAddress,
+                    // Passed WHOLE, not sliced. An address is absolute, so
+                    // `call/gate` means the same thing at every depth; slicing
+                    // it the way `resumeOutputs` is sliced would break exactly
+                    // the nested case this exists for.
+                    $options->humanAnswers,
                 );
                 $result = $exec($ctx);
                 if ($result instanceof PartialResult) {

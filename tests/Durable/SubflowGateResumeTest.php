@@ -277,7 +277,18 @@ final class SgHostGate implements \FancyFlow\Contracts\NodeExecutor
 {
     public function execute(\FancyFlow\Runtime\ExecutionContext $ctx): mixed
     {
-        $values = $ctx->inputs['values'] ?? null;
+        // THE SEAM (fancy-flow-php#22). A host kind asks whether ITS OWN answer
+        // has arrived, keyed by address, so this resumes identically at the top
+        // level, inside a subflow (`call/gate`) and per iteration
+        // (`each/1/gate`). The engine no longer has to know this kind by name.
+        $answer = $ctx->humanAnswer();
+        $values = is_array($answer) ? ($answer['values'] ?? null) : null;
+
+        // The legacy path stays as a fallback: an answer merged onto the
+        // `values` port by RunSetup::initialInputs(). That map is keyed by bare
+        // node id against the graph being RUN, which is why it reaches a
+        // top-level node and never one inside a child graph.
+        $values ??= $ctx->inputs['values'] ?? null;
 
         if ($values === null) {
             $ctx->pauseForHuman('input', ['kind' => 'review_approval', 'title' => 'Approve the child']);
@@ -375,24 +386,15 @@ it('resumes a THIRD-PARTY pausing kind that lives inside a SUBFLOW', function ()
     $run->refresh();
 
     expect($run->status)->toBe(WorkflowRun::AWAITING_INPUT);
-    expect($run->awaiting_node)->toBe('gate');
+    // QUALIFIED since 0.59: a gate one level down parks at `call/gate`, not
+    // `gate`. This assertion predates that and was asserting the old shape.
+    expect($run->awaiting_node)->toBe('call/gate');
 
     $run->submitInput(values: ['decision' => 'approved']);
     $run->refresh();
 
     expect($run->status)->toBe(WorkflowRun::COMPLETED);
-})->skip(
-    'KNOWN FAILURE, fancy-flow-php#22 — committed skipped rather than deleted so the '
-    .'disagreement stays visible and this flips green the day it is fixed. A third-party '
-    .'pausing kind resumes at the top level and NOT inside a subflow, because its only '
-    .'resume channel is the `values` input port that RunSetup::initialInputs() merges — '
-    .'and that map is keyed by node id against the graph being RUN, so a child node id is '
-    .'never consumed. Our own two human kinds are unaffected: they resume on the recorded '
-    .'answers of the run, through an override bound by KIND, which does survive into the '
-    .'child. Fixing it means letting a recorded answer reach a node at arbitrary DEPTH, '
-    .'which is a contract change across all four runtimes and the same question '
-    .'fancy-flow-php#19 needs answered for a per-item gate. Not patched locally on purpose.'
-);
+});
 
 /**
  * **The consumer's actual shape, end to end.**

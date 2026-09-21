@@ -10,6 +10,65 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.60.0 — 2026-09-20
+
+### Added
+
+- **Any pausing executor can now read its own human answer** —
+  `ExecutionContext::humanAnswer()`, the counterpart to `pauseForHuman()`, which
+  until now had none.
+
+  ```php
+  if (($answer = $ctx->humanAnswer()) !== null) {
+      return $answer;
+  }
+
+  $ctx->pauseForHuman('input', $detail);
+  ```
+
+  Keyed by **address**, so it works unchanged at depth: a gate inside `call`
+  reads `call/gate`, one in the second iteration of `each` reads `each/1/gate`.
+  Those are the addresses the checkpoint and the pause already use, so nothing
+  new has to agree about naming. `hasHumanAnswer()` distinguishes "answered with
+  null" from "not answered".
+
+### Fixed
+
+- **A host-registered pausing kind inside a `subflow` now resumes** (#22). It
+  parked correctly, accepted its answer — HTTP 200, stored at the right address
+  — and then **re-parked, forever.** A consumer reproduced it 8/8 across four
+  host kinds and both durable drivers, and their phrase for it is the accurate
+  one: *saved, not consumed.*
+
+  The cause was that delivery was **executor substitution keyed by kind**:
+  `RunSetup` swapped in executors holding the answers for exactly
+  `human_approval` and `user_input`. By construction that could not serve a kind
+  the package does not know by name — and `ExecutionContext` offered no way to
+  read an answer, so a third-party executor could park and never learn its
+  answer had arrived.
+
+  Answers now ride on `RunOptions::$humanAnswers` and reach every executor
+  through the context. The two builtins are ordinary users of the same seam
+  rather than privileged substitutions, so builtin and host kinds resume by one
+  path — which is the only arrangement that cannot regress for one of them
+  while the other stays green.
+
+  Not inert while it was open: on each attempted resume, one consumer's
+  `update_file` kind deleted and re-inserted its draft row. An unresumable gate
+  churned durable state rather than failing quietly.
+
+### Upgrade
+
+- **A host kind must read the answer to resume at depth.** Add the
+  `humanAnswer()` check shown above before `pauseForHuman()`. Nothing else
+  changes: a kind that only ever runs at the TOP level keeps working untouched,
+  because `RunSetup::initialInputs()` still merges the answer onto its `values`
+  port — that map is keyed by bare node id against the graph being run, which is
+  precisely why it reaches a top-level node and never one inside a child graph.
+- Kind registration remains available for metadata and validation. It is no
+  longer the delivery path, and a host that registers nothing still resumes.
+
+
 ## 0.59.1 — 2026-09-18
 
 ### Fixed

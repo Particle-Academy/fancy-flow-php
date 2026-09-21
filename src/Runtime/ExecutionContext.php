@@ -81,11 +81,81 @@ final class ExecutionContext
         public readonly ?string $address = null,
         /** Whether this execution is the only possible target for a legacy bare answer. */
         public readonly bool $allowLegacyBareAddress = true,
+        /**
+         * Human answers recorded for this run, keyed by node address.
+         *
+         * Read it with {@see humanAnswer()} rather than directly.
+         *
+         * @var array<string,mixed>
+         */
+        public readonly array $humanAnswers = [],
     ) {}
 
     public function nodeAddress(): string
     {
         return $this->address ?? $this->node->id;
+    }
+
+    /**
+     * The human answer recorded for THIS node, or null if none has arrived.
+     *
+     * The counterpart to {@see pauseForHuman()}, which until 0.60 had none: a
+     * pausing executor could park and could never learn its answer had come
+     * back. Delivery was executor SUBSTITUTION keyed by kind, so it reached the
+     * two builtin human kinds and nothing else — a host-registered gate inside
+     * a subflow parked, accepted its answer, and re-parked forever
+     * (fancy-flow-php#22). Any executor can now do:
+     *
+     * ```php
+     * if (($answer = $ctx->humanAnswer()) !== null) {
+     *     return $answer;
+     * }
+     *
+     * $ctx->pauseForHuman('input', $detail);
+     * ```
+     *
+     * Keyed by ADDRESS, so it works unchanged at depth: a gate inside `call`
+     * reads `call/gate`, and one in the second iteration of `each` reads
+     * `each/1/gate`. That is the same address the checkpoint and the pause
+     * already use, so nothing new has to agree about naming.
+     *
+     * Falls back to the bare node id ONLY where the context proves there is a
+     * single possible occurrence ({@see allowsLegacyNestedAddress()}), which is
+     * what keeps a pre-qualified-era answer from satisfying two siblings.
+     *
+     * Returning null and "answered with null" are deliberately NOT
+     * distinguished here: an executor that needs that distinction should check
+     * {@see hasHumanAnswer()}.
+     */
+    public function humanAnswer(): mixed
+    {
+        return $this->humanAnswers[$this->answerKey()] ?? null;
+    }
+
+    /** Whether an answer has been recorded, even one whose value is null. */
+    public function hasHumanAnswer(): bool
+    {
+        return array_key_exists($this->answerKey(), $this->humanAnswers);
+    }
+
+    /** The key this node's answer is stored under, honouring the legacy fallback. */
+    private function answerKey(): string
+    {
+        $address = $this->nodeAddress();
+
+        if (array_key_exists($address, $this->humanAnswers)) {
+            return $address;
+        }
+
+        $bare = $this->node->id;
+
+        if ($address !== $bare
+            && $this->allowLegacyBareAddress
+            && array_key_exists($bare, $this->humanAnswers)) {
+            return $bare;
+        }
+
+        return $address;
     }
 
     /**

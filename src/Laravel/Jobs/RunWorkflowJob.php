@@ -174,6 +174,9 @@ final class RunWorkflowJob implements ShouldQueue
                 entryNodes: $run->entry_nodes,
                 props: RunSetup::props($run),
             resumeOutputs: $run->node_outputs ?? [],
+            // Open delivery: any pausing executor can read its own answer,
+            // not just the two kinds we substitute for (#22).
+            humanAnswers: RunSetup::humanAnswers($run),
             // RUN-scoped, and honestly so. The single driver has no per-node
             // row, so every node in this attempt is told the run's attempt
             // number. That is conservative rather than wrong: it can only make

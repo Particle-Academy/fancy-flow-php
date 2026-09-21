@@ -72,6 +72,46 @@ final class RunSetup
     }
 
     /**
+     * Every human answer this run has recorded, keyed by node ADDRESS.
+     *
+     * The open delivery path. Until 0.60 an answer reached a node only by
+     * SUBSTITUTING its executor for one holding this map, bound by kind — which
+     * served `human_approval` and `user_input` and nothing else. A
+     * host-registered pausing kind parked, accepted its answer (stored right
+     * here, at the right address), and re-parked forever, because nothing ever
+     * handed it back (fancy-flow-php#22).
+     *
+     * Now it rides on {@see RunOptions::$humanAnswers} and any executor can ask
+     * {@see ExecutionContext::humanAnswer()}. The two builtins keep working
+     * because they read the same answers by the same addresses; they are simply
+     * no longer the only things that can.
+     *
+     * Approvals and submissions share one namespace deliberately: a node is
+     * answered or it is not, and which endpoint recorded it is the host's
+     * concern, not the engine's.
+     *
+     * @return array<string,mixed>
+     */
+    public static function humanAnswers(?WorkflowRun $run): array
+    {
+        if ($run === null) {
+            return [];
+        }
+
+        $answers = [];
+
+        foreach ($run->approvals ?? [] as $address => $approved) {
+            $answers[$address] = ['approved' => $approved];
+        }
+
+        foreach ($run->submissions ?? [] as $address => $values) {
+            $answers[$address] = ['values' => $values];
+        }
+
+        return $answers;
+    }
+
+    /**
      * The identity handed to ONE node about to execute.
      *
      * `attempt` and `firstAttemptAt` come off that node's CLAIM ROW rather than

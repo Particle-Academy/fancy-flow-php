@@ -196,6 +196,10 @@ final class SubflowExecutor implements NodeExecutor
                 // a first attempt; on a resume after a gate it is what stops the
                 // child re-running work it already committed.
                 resumeOutputs: $ctx->resumeOutputs,
+                    // Unchanged, unlike resumeOutputs: an answer is keyed by an
+                    // ABSOLUTE address, so the child looks up the same
+                    // `call/gate` / `each/1/gate` the parent recorded.
+                    humanAnswers: $ctx->humanAnswers,
                 addressPrefix: $ctx->nodeAddress().'/',
                 allowLegacyBareAddress: $ctx->allowsLegacyNestedAddress(),
             ),

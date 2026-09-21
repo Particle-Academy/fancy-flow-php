@@ -194,6 +194,9 @@ final class RunNodeJob implements ShouldQueue
                 entryNodes: $run->entry_nodes,
                 props: RunSetup::props($run),
                 resumeOutputs: NodeClaims::outputs($rows),
+                // Open delivery: any pausing executor can read its own answer,
+                // not just the two kinds we substitute for (#22).
+                humanAnswers: RunSetup::humanAnswers($run),
                 // Per NODE, off the claim row — not per run. This is the only
                 // place in the suite where `attempt` and the first-attempt clock
                 // are EXACT rather than conservative, and they are what a writing
