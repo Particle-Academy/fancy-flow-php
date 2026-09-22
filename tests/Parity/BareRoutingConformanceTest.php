@@ -13,6 +13,8 @@ $rows = array_values(array_filter(Conformance::cases('flow/graph-runs'),
     static fn (array $case): bool => (str_contains($case['id'], '-bare-') || str_contains($case['id'], '-unclosed-'))));
 
 it('loads all eight shared routing refusal rows', function () use ($rows): void {
+    echo "\nflow/graph-runs routing refusals [php] -- fancy-conformance ".Conformance::version()."\n";
+    expect(Conformance::version())->toBe('0.32.0');
     expect(count($rows))->toBe(8);
 });
 
