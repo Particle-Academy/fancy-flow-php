@@ -10,6 +10,8 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.61.0 — 2026-09-22
+
 ### Changed
 
 - **BREAKING:** Bare or unclosed routing strings in `branch.condition` and
