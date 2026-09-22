@@ -7,6 +7,7 @@ namespace FancyFlow\Nodes\Logic;
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Nodes\Support\Expr;
 use FancyFlow\Nodes\Support\RoutingDiagnostics;
+use FancyFlow\Nodes\Support\RoutingExpression;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\Port;
 
@@ -20,6 +21,7 @@ final class SwitchCaseExecutor implements NodeExecutor
     public function execute(ExecutionContext $ctx): mixed
     {
         $expression = $ctx->option('value');
+        RoutingExpression::validate($ctx, $expression, 'switch_case', 'value');
         $value = Expr::text(Expr::evaluate($expression, $ctx->inputs));
         $cases = $ctx->option('cases', []);
         $port = is_array($cases) && isset($cases[$value]) ? (string) $cases[$value] : 'default';

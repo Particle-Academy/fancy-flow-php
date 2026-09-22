@@ -295,7 +295,7 @@ final class Builtin
                 'description' => 'Multi-way branch on a condition or value.', 'icon' => '◇',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'true', 'label' => 'true'], ['id' => 'false', 'label' => 'false']],
                 'configSchema' => [
-                    ['type' => 'expression', 'key' => 'condition', 'label' => 'Condition', 'example' => '{{ $json.active }}', 'required' => true],
+                    ['type' => 'expression', 'key' => 'condition', 'label' => 'Condition', 'description' => 'String values must be {{ }}-wrapped expressions; bare strings and unclosed templates abort the run.', 'example' => '{{ $json.active }}', 'required' => true],
                 ],
             ],
             [
@@ -306,7 +306,7 @@ final class Builtin
                 'inputs' => [['id' => 'in']],
                 'outputs' => [['id' => 'case_a', 'label' => 'a'], ['id' => 'case_b', 'label' => 'b'], ['id' => 'default', 'label' => 'default']],
                 'configSchema' => [
-                    ['type' => 'expression', 'key' => 'value', 'label' => 'Switch on', 'example' => '{{ $json.kind }}', 'required' => true],
+                    ['type' => 'expression', 'key' => 'value', 'label' => 'Switch on', 'description' => 'String values must be {{ }}-wrapped expressions; bare strings and unclosed templates abort the run.', 'example' => '{{ $json.kind }}', 'required' => true],
                     ['type' => 'json', 'key' => 'cases', 'label' => 'Cases (JSON)', 'default' => ['a' => 'case_a', 'b' => 'case_b']],
                 ],
             ],

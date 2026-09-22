@@ -7,6 +7,7 @@ namespace FancyFlow\Nodes\Logic;
 use FancyFlow\Contracts\NodeExecutor;
 use FancyFlow\Nodes\Support\Expr;
 use FancyFlow\Nodes\Support\RoutingDiagnostics;
+use FancyFlow\Nodes\Support\RoutingExpression;
 use FancyFlow\Runtime\ExecutionContext;
 use FancyFlow\Runtime\Port;
 
@@ -21,6 +22,7 @@ final class BranchExecutor implements NodeExecutor
     public function execute(ExecutionContext $ctx): mixed
     {
         $condition = $ctx->option('condition');
+        RoutingExpression::validate($ctx, $condition, 'branch', 'condition');
         $resolved = Expr::evaluate($condition, $ctx->inputs);
         $port = Expr::truthy($resolved) ? 'true' : 'false';
 
