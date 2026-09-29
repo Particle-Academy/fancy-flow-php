@@ -71,10 +71,17 @@ final class StructuredOutput
                 return $decoded;
             }
 
-            throw new FlowException(
-                'The model returned a fenced block that is not valid JSON: '.json_last_error_msg().
-                '. This is usually truncation — raise max_tokens, or narrow the schema so the answer fits.'
-            );
+            $error = json_last_error();
+
+            $repaired = self::repairControlCharacters($inner);
+            if ($repaired !== null) {
+                $decoded = json_decode($repaired, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return $decoded;
+                }
+            }
+
+            throw new FlowException(self::decodeFailure($error));
         }
 
         // A preamble, a trailing note, or both: take the first balanced value.
@@ -84,12 +91,114 @@ final class StructuredOutput
             if (json_last_error() === JSON_ERROR_NONE) {
                 return $decoded;
             }
+
+            $repaired = self::repairControlCharacters($slice);
+            if ($repaired !== null) {
+                $decoded = json_decode($repaired, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return $decoded;
+                }
+            }
         }
 
         throw new FlowException(
             'The model did not return JSON that could be parsed. First 200 characters: '.
             mb_substr($trimmed, 0, 200)
         );
+    }
+
+    /**
+     * Why the decode failed, in terms of the mechanism — never a guess.
+     *
+     * This message is not only read by people: a host may feed it back to the
+     * model in a corrective retry (fancy-flow-php#26), so a wrong diagnosis
+     * does not merely mislead, it INSTRUCTS the retry. One consumer was told to
+     * shorten a reply that was never too long, missed again, and lost the run.
+     *
+     * `max_tokens` is therefore never the headline remedy. A host whose model
+     * settings come from an admin tier and are refused on a node — as that
+     * consumer's does — is otherwise told to do the one thing it cannot.
+     * Narrowing the schema is advice every host can act on.
+     */
+    private static function decodeFailure(int $error): string
+    {
+        $prefix = 'The model returned a fenced block that is not valid JSON: '.json_last_error_msg().'. ';
+
+        if ($error === JSON_ERROR_CTRL_CHAR) {
+            return $prefix.
+                'A raw control character appears inside a string value — usually a newline in a field '.
+                'carrying Markdown or multi-line text, which JSON requires escaped as \\n. Escaping them '.
+                'and re-reading was tried and still did not parse, so something else is wrong with the block.';
+        }
+
+        return $prefix.
+            'If it ends mid-value the answer was longer than the reply allowed: narrow the schema, or split '.
+            'the long field into its own step, so it fits. If your host controls the model output limit, '.
+            'raising it is the other remedy.';
+    }
+
+    /**
+     * Escape raw control characters that sit INSIDE string literals.
+     *
+     * Returns null when there was nothing to repair, so a caller never re-parses
+     * for no reason. The result is only ever ACCEPTED if it then parses, which
+     * is what makes this safe: escaping a control character cannot close an
+     * unterminated string or a missing bracket, so a truncated block still
+     * fails rather than arriving as a short one.
+     *
+     * Only inside strings. A newline BETWEEN tokens is legal JSON and pretty
+     * printing is full of them; escaping those would corrupt a valid document.
+     */
+    private static function repairControlCharacters(string $json): ?string
+    {
+        $out = '';
+        $inString = false;
+        $escaped = false;
+        $changed = false;
+        $length = strlen($json);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $json[$i];
+
+            if ($escaped) {
+                $out .= $char;
+                $escaped = false;
+
+                continue;
+            }
+
+            if ($char === '\\' && $inString) {
+                $out .= $char;
+                $escaped = true;
+
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = ! $inString;
+                $out .= $char;
+
+                continue;
+            }
+
+            if ($inString && ord($char) < 0x20) {
+                $changed = true;
+                $out .= match ($char) {
+                    "\n" => '\\n',
+                    "\r" => '\\r',
+                    "\t" => '\\t',
+                    "\f" => '\\f',
+                    "\x08" => '\\b',
+                    default => sprintf('\\u%04x', ord($char)),
+                };
+
+                continue;
+            }
+
+            $out .= $char;
+        }
+
+        return $changed ? $out : null;
     }
 
     /**

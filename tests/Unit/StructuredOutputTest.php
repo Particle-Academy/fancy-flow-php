@@ -52,6 +52,59 @@ describe('extract', function () {
         expect(fn () => StructuredOutput::extract($truncated))->toThrow(FlowException::class);
     });
 
+    it('reads a fenced block whose string value carries a raw newline', function () {
+        // fancy-flow-php#26, from production: a step asked for a Markdown
+        // document inside one JSON string field, and the model put a real
+        // newline in it. The block is COMPLETE -- only the control character
+        // is illegal -- so it is repaired and read rather than refused.
+        $text = "```json
+{\"doc\":\"# Title
+Body line\",\"ok\":true}
+```";
+
+        expect(StructuredOutput::extract($text))->toBe(['doc' => "# Title
+Body line", 'ok' => true]);
+    });
+
+    it('does not let the repair rescue a TRUNCATED block', function () {
+        // The guard that makes the repair safe to have. Escaping control
+        // characters cannot close an unterminated string or a missing bracket,
+        // so a cut-off answer still fails rather than arriving as a short one.
+        $truncated = "```json
+[{\"id\":1},{\"note\":\"line
+line\",\"ti";
+
+        expect(fn () => StructuredOutput::extract($truncated))->toThrow(FlowException::class);
+    });
+
+    it('names the control character, and does not prescribe max_tokens', function () {
+        // The message is fed back to a model in a corrective retry, so being
+        // wrong about the mechanism instructs the retry to do the wrong thing.
+        // An unescaped control char that STILL will not parse after repair.
+        $text = "```json
+{\"doc\":\"a
+b\",\"broken\":
+```";
+
+        try {
+            StructuredOutput::extract($text);
+            expect(false)->toBeTrue('expected it to raise');
+        } catch (FlowException $e) {
+            expect($e->getMessage())->not->toContain('max_tokens');
+        }
+    });
+
+    it('leaves a newline BETWEEN tokens alone -- that is legal JSON', function () {
+        $text = "```json
+{
+  \"a\": 1,
+  \"b\": 2
+}
+```";
+
+        expect(StructuredOutput::extract($text))->toBe(['a' => 1, 'b' => 2]);
+    });
+
     it('raises on an empty response', function () {
         expect(fn () => StructuredOutput::extract('   '))->toThrow(FlowException::class);
     });

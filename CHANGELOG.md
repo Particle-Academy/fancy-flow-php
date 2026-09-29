@@ -10,6 +10,39 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.62.0 — 2026-09-28
+
+### Fixed
+
+- **A fenced block whose string value carries a RAW control character is now
+  repaired and read, and the failure message no longer guesses truncation**
+  (fancy-flow-php#26, reported from a consumer's production run). A step asked
+  for a Markdown document inside one JSON string field; the model put a real
+  newline in it. The block was COMPLETE — only the control character was
+  illegal — but every decode failure inside a fence raised one message
+  asserting truncation and naming `max_tokens`.
+
+  Two things were wrong with that, and the second is the expensive one. The
+  reporter's host resolves model settings from an admin tier and refuses them on
+  a node, so the remedy was impossible to follow. And they feed the exception
+  message back to the model in a corrective retry — so the model was told to
+  shorten a reply that was never too long, missed again, and the run died taking
+  every earlier step's work with it. **A diagnosis consumed by software has to be
+  right about the mechanism, not merely sympathetic.**
+
+  Now: raw control characters inside string literals are escaped and the block is
+  re-read, and the result is accepted ONLY if it then parses. Characters between
+  tokens are untouched — a newline there is legal JSON. The repair cannot
+  rescue a truncated block, because escaping a control character closes neither
+  an unterminated string nor a missing bracket; a test pins that.
+
+  The remaining messages follow the decoder's actual error. `max_tokens` is no
+  longer the headline remedy anywhere: narrowing the schema, or splitting a long
+  field into its own step, is advice every host can act on.
+
+  **What you must DO: nothing.** A case that used to throw now parses.
+
+
 ## 0.61.0 — 2026-09-22
 
 ### Changed
