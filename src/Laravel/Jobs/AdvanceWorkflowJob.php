@@ -84,7 +84,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
         NodeKindRegistry $kinds,
     ): void {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || $run->isTerminal() || $run->status === WorkflowRun::SKIPPED) {
+        if ($run === null || ! $run->canAdvance()) {
             return;
         }
 
@@ -414,7 +414,7 @@ final class AdvanceWorkflowJob implements ShouldQueue
     public function failed(Throwable $e): void
     {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || $run->isTerminal() || $run->status === WorkflowRun::SKIPPED) {
+        if ($run === null || ! $run->canAdvance()) {
             return;
         }
 

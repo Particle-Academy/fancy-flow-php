@@ -10,6 +10,46 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.63.0 — 2026-09-28
+
+### Added
+
+- **`WorkflowRun::cancel()` and a first-class `CANCELLED` status**
+  (fancy-flow-php#27, reported from production: an operator clicked cancel, the
+  run finished anyway, and the output arrived a little later). Cancelling is a
+  status change and nothing else — a node already executing finishes the work
+  it started, which is the honest thing to do about a side effect that has
+  already happened — but nothing after it advances. `CANCELLED` is terminal,
+  and cancelling an already-terminal run returns `false` rather than rewriting
+  its history.
+
+  A host no longer has to delete rows out of Laravel's queue storage to make a
+  cancel stick, which is what the reporter was doing.
+
+### Fixed
+
+- **A durable job no longer promotes a run status it does not recognise back to
+  `running`.** This is the defect under the report, and it was wider than
+  cancellation: the guard asked "is it terminal, or skipped?" and then
+  `forceFill(['status' => RUNNING])`, so ANY state a host invented — the
+  reporter's own `cancelled` — was not ignored but RESURRECTED. Their
+  in-flight node finished, dispatched `AdvanceWorkflowJob`, and the run ran to
+  completion after the operator had stopped it.
+
+  The four job guards now ask `canAdvance()`, a WHITELIST of the states this
+  package knows how to move forward. A blacklist has to be right about every
+  state that will ever exist, including ones invented after it was written; a
+  whitelist only has to be right about ours, and it fails safe — an unknown
+  status stops a run instead of restarting it.
+
+  It was already drifting, which is the argument in miniature: three call sites
+  carried `|| status === SKIPPED` beside `isTerminal()`, and a fourth
+  (`RunWorkflowJob`, the `single` driver) had forgotten it.
+
+  **What you must DO: nothing**, unless you were relying on a job restarting a
+  run parked in a status this package does not define — which is the bug.
+
+
 ## 0.62.0 — 2026-09-28
 
 ### Fixed

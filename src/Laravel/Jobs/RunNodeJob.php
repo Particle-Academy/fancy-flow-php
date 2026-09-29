@@ -120,7 +120,7 @@ final class RunNodeJob implements ShouldQueue
     public function handle(FancyFlowManager $flow, Dispatcher $events, NodeKindRegistry $kinds): void
     {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || $run->isTerminal() || $run->status === WorkflowRun::SKIPPED) {
+        if ($run === null || ! $run->canAdvance()) {
             return;
         }
         if ($run->isAwaitingHuman()) {

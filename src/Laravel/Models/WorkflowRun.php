@@ -56,6 +56,16 @@ class WorkflowRun extends Model
      */
     public const SKIPPED = 'skipped';
 
+    /**
+     * Stopped by a person or a host, deliberately (fancy-flow-php#27).
+     *
+     * Terminal. Distinct from FAILED, which says something went wrong, and from
+     * SKIPPED, which says it never started. A cancelled run may have completed
+     * nodes and real side effects behind it; what it will not do is take
+     * another step.
+     */
+    public const CANCELLED = 'cancelled';
+
     /** Cohort collision policies. */
     public const POLICY_SERIAL_GUARDED = 'serial-guarded';
     public const POLICY_SERIAL = 'serial';
@@ -104,7 +114,63 @@ class WorkflowRun extends Model
 
     public function isTerminal(): bool
     {
-        return in_array($this->status, [self::COMPLETED, self::PARTIAL, self::FAILED], true);
+        return in_array($this->status, [self::COMPLETED, self::PARTIAL, self::FAILED, self::CANCELLED], true);
+    }
+
+    /**
+     * May a durable job move this run forward?
+     *
+     * A WHITELIST, and that is the whole point (fancy-flow-php#27). The jobs
+     * used to ask the opposite question — "is it terminal, or skipped?" — and
+     * then `forceFill(['status' => RUNNING])`. So a status they did not
+     * recognise was not merely ignored, it was PROMOTED BACK TO RUNNING: a host
+     * that added its own `cancelled` state watched an in-flight node finish,
+     * resurrect the run, and deliver output the operator had cancelled.
+     *
+     * A blacklist has to be right about every state that exists, including the
+     * ones a host invented after this file was written. A whitelist only has to
+     * be right about ours, and it fails safe: an unknown status stops the run
+     * instead of restarting it.
+     *
+     * The proof it was already drifting: three call sites carried
+     * `|| status === SKIPPED` beside `isTerminal()`, and a fourth
+     * (`RunWorkflowJob`) forgot it.
+     */
+    public function canAdvance(): bool
+    {
+        return in_array($this->status, [
+            self::PENDING,
+            self::RUNNING,
+            self::AWAITING_APPROVAL,
+            self::AWAITING_INPUT,
+            self::AWAITING_HUMAN,
+        ], true);
+    }
+
+    /**
+     * Stop a run, from outside, without reaching into the queue.
+     *
+     * Cancelling is a STATUS change and nothing else: an in-flight node is not
+     * killed mid-flight — it finishes the work it already started, which is the
+     * honest thing to do about a side effect that has already happened — but
+     * nothing after it advances, because every durable job asks
+     * {@see canAdvance()} first.
+     *
+     * So a host no longer has to delete rows out of Laravel's queue storage to
+     * make a cancel stick, which is what one was doing (fancy-flow-php#27).
+     */
+    public function cancel(?string $reason = null): bool
+    {
+        if ($this->isTerminal()) {
+            return false;
+        }
+
+        $this->forceFill(array_filter([
+            'status' => self::CANCELLED,
+            'error' => $reason,
+        ], static fn ($value) => $value !== null))->save();
+
+        return true;
     }
 
     public function isAwaitingApproval(): bool

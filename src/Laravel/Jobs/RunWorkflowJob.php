@@ -111,7 +111,7 @@ final class RunWorkflowJob implements ShouldQueue
     public function handle(FancyFlowManager $flow, Dispatcher $events, TriggerCohort $cohort): void
     {
         $run = WorkflowRun::query()->where('run_key', $this->runKey)->first();
-        if ($run === null || $run->isTerminal()) {
+        if ($run === null || ! $run->canAdvance()) {
             return;
         }
 
