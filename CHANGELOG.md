@@ -10,6 +10,39 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.64.0 — 2026-10-06
+
+### Fixed
+
+- **A nested run's node events now reach the host, not just its checkpoints**
+  (#25). Both executors that run a nested graph — `for_each` over its item lane
+  and `subgraph` over an inline graph — forwarded only `node-checkpoint` and
+  dropped `node-status`, `node-message` and `log` on the floor. So a node inside
+  a `for_each` lane could report progress and the host saw nothing.
+
+  For `for_each` that was the whole point of the feature: per-item progress,
+  per-item logs and per-item messages are among the things you iterate IN THE
+  GRAPH to get, rather than looping inside one executor — and they were silently
+  unavailable.
+
+  **Checkpoints survived because they are what RESUME reads**, so every durable
+  test passed throughout. Nothing asserted on the events a human watches, which
+  is why this lasted.
+
+  **What a consumer must do: nothing, unless you count events.** You will now
+  receive node events from inside nested runs, addressed `each/0/body`,
+  `each/1/body`, … A host that assumed every `node-status` referred to a
+  top-level node should read the address rather than the count.
+
+  Run-scoped events (`run-start`, `run-end`, `run-error`) are deliberately NOT
+  forwarded: a lane's lifecycle is not the parent's, and forwarding it would
+  report the workflow as starting once per item.
+
+  The re-addressing lives in `RunEvent::forParent()` — one implementation, used
+  by both executors. Each previously carried its own copy of the forwarding
+  condition, which is how they came to be identically wrong.
+
+
 ## 0.63.0 — 2026-09-28
 
 ### Added

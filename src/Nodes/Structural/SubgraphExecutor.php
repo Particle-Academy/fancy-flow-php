@@ -51,9 +51,14 @@ final class SubgraphExecutor implements NodeExecutor
         $result = (new FlowRunner())->run(
             $import->graph,
             $executors,
+            // EVERY node-scoped event, not just checkpoints (#25) -- the same
+            // rule as `for_each`, and deliberately the same ONE implementation
+            // of it. These two drifted apart precisely because each carried its
+            // own copy of the forwarding condition.
             onEvent: static function (RunEvent $event) use ($ctx, $checkpointPrefix): void {
-                if ($event->type === RunEvent::NODE_CHECKPOINT && $event->nodeId !== null) {
-                    $ctx->emit(RunEvent::nodeCheckpoint($checkpointPrefix.$event->nodeId, $event->value));
+                $forwarded = $event->forParent($checkpointPrefix);
+                if ($forwarded !== null) {
+                    $ctx->emit($forwarded);
                 }
             },
             options: new RunOptions(

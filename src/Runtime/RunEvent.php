@@ -49,6 +49,51 @@ final class RunEvent
         public readonly ?string $error = null,
     ) {}
 
+    /**
+     * This event as seen by a PARENT run, or null if the parent should not see it.
+     *
+     * A nested run — `for_each` over its item lane, `subgraph` over an inline
+     * graph — emits events about nodes the host has never heard of, under ids
+     * that collide with the parent's. Re-addressing them is the one rule that
+     * must not be written twice: the two executors that run nested graphs both
+     * forwarded ONLY `node-checkpoint` and dropped status, message and log on
+     * the floor (#25), and a second copy of this rule in each of them is how
+     * they drifted apart in the first place.
+     *
+     * Run-scoped events return NULL deliberately. A lane's `run-start` is not
+     * the parent's: forwarding it would tell a host the workflow started once
+     * per item and finished before it had.
+     */
+    public function forParent(string $prefix): ?self
+    {
+        if (in_array($this->type, [self::RUN_START, self::RUN_END, self::RUN_ERROR], true)) {
+            return null;
+        }
+
+        $clone = clone $this;
+
+        // A node-scoped event with no nodeId is malformed rather than global;
+        // passing it through unaddressed would attribute it to the parent.
+        if ($this->nodeId === null) {
+            return $clone;
+        }
+
+        return new self(
+            type: $this->type,
+            nodeId: $prefix.$this->nodeId,
+            status: $this->status,
+            text: $this->text,
+            phase: $this->phase,
+            portId: $this->portId,
+            value: $this->value,
+            level: $this->level,
+            message: $this->message,
+            detail: $this->detail,
+            ok: $this->ok,
+            error: $this->error,
+        );
+    }
+
     public static function runStart(): self
     {
         return new self(self::RUN_START);

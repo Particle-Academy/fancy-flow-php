@@ -73,9 +73,15 @@ final class ForEachExecutor implements NodeExecutor
             $nested = (new FlowRunner())->run(
                 $lane['graph'],
                 $ctx->executors?->withoutNodeBindings() ?? throw new \LogicException('for_each requires the active executor registry'),
+                // EVERY node-scoped event, not just checkpoints (#25). Status,
+                // message and log were dropped here, so per-item progress --
+                // one of the things you iterate in the graph FOR -- never
+                // reached the host. Checkpoints survived because resume needs
+                // them, which is why the durable tests stayed green.
                 onEvent: function (RunEvent $event) use ($ctx, $parentAddress): void {
-                    if ($event->type === RunEvent::NODE_CHECKPOINT) {
-                        $ctx->emit(RunEvent::nodeCheckpoint($parentAddress.'/'.(string) $event->nodeId, $event->value));
+                    $forwarded = $event->forParent($parentAddress.'/');
+                    if ($forwarded !== null) {
+                        $ctx->emit($forwarded);
                     }
                 },
                 options: new RunOptions(
