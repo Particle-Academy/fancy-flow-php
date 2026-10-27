@@ -92,6 +92,10 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           extensions: mbstring
+        env:
+          update: true # latest patch, not the runner's preinstalled one
+      - name: Floor PHP at the PHP2Shell-patched release (CVE-2026-109618/109619)
+        run: php -r '$v=$argv[1]??PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION.".".PHP_RELEASE_VERSION; $f=["8.5"=>"8.5.12","8.4"=>"8.4.27","8.3"=>"8.3.36","8.2"=>"8.2.35"][implode(".",array_slice(explode(".",$v),0,2))]??(version_compare($v,"8.6",">=")?"8.6":"8.2.35"); if(version_compare($v,$f,"<")){echo "::error::PHP $v is below the PHP2Shell floor $f".PHP_EOL;exit(1);} echo "PHP $v >= PHP2Shell floor $f".PHP_EOL;'
 
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
