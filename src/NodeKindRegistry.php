@@ -212,9 +212,66 @@ final class NodeKindRegistry
                     : "{$field->label} must be one of ".implode(', ', $allowed);
             case 'json':
                 return null; // permissive — any JSON-shaped value passes.
+            case 'repeater':
+                return $this->validateRepeater($field, $value);
             default:
                 return null;
         }
+    }
+
+    /**
+     * Faithful to the `repeater` case of TS `validateField`. Reports the FIRST
+     * offending row, so the author knows which one.
+     *
+     * A decoded JSON object is an assoc array here, and `{}` decodes to `[]` —
+     * the same value as an empty list. So a row is an object when it is an
+     * array that is NOT a non-empty list; the empty one is the blank row `{}`.
+     */
+    private function validateRepeater(ConfigField $field, mixed $value): ?string
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return "{$field->label} must be a list";
+        }
+        if ($field->minItems !== null && count($value) < $field->minItems) {
+            return "{$field->label} needs at least {$field->minItems}";
+        }
+        if ($field->maxItems !== null && count($value) > $field->maxItems) {
+            return "{$field->label} allows at most {$field->maxItems}";
+        }
+        $blank = static fn (mixed $cell): bool => $cell === null || $cell === '';
+        foreach ($value as $i => $row) {
+            $item = $i + 1;
+            if (! is_array($row) || ($row !== [] && array_is_list($row))) {
+                return "{$field->label} item {$item} must be an object";
+            }
+            if ($field->skipBlankRows) {
+                $allBlank = true;
+                foreach ($field->fields as $sub) {
+                    if (! $blank($row[$sub->key] ?? null)) {
+                        $allBlank = false;
+                        break;
+                    }
+                }
+                if ($allBlank) {
+                    continue;
+                }
+            }
+            foreach ($field->fields as $sub) {
+                $cell = $row[$sub->key] ?? null;
+                if ($sub->required && $blank($cell)) {
+                    return "{$field->label} item {$item}: {$sub->label} is required";
+                }
+                if ($cell === null) {
+                    continue;
+                }
+                $issue = $this->validateField($sub, $cell);
+                if ($issue !== null) {
+                    return "{$field->label} item {$item}: {$issue}";
+                }
+            }
+        }
+
+        return null;
     }
 
     /** Default header accent per category. Faithful to `categoryAccent`. */

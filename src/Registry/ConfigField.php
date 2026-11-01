@@ -10,7 +10,12 @@ namespace FancyFlow\Registry;
  * collapsed to a single class carrying every variant's attributes.
  *
  * `type` is one of: text, textarea, number, select, switch, json, expression,
- * credential. Unknown attributes for a given type are simply null/empty.
+ * credential, repeater. Unknown attributes for a given type are simply null/empty.
+ *
+ * A `repeater` is a list of rows, each validated against `fields` — the TS
+ * `RepeaterConfigField`. `skipBlankRows` says a row whose every field is blank
+ * is an unfilled placeholder: validation skips it. Set it only where the kind's
+ * executor ignores such a row too.
  */
 final class ConfigField
 {
@@ -19,6 +24,7 @@ final class ConfigField
 
     /**
      * @param list<array{value:string,label:string}> $options
+     * @param list<ConfigField>                      $fields  a repeater's row schema
      */
     public function __construct(
         public readonly string $type,
@@ -36,6 +42,12 @@ final class ConfigField
         public readonly ?string $credentialType = null,
         public readonly ?int $rows = null,
         public readonly ?string $language = null,
+        public readonly array $fields = [],
+        public readonly ?string $titleKey = null,
+        public readonly ?string $addLabel = null,
+        public readonly ?int $minItems = null,
+        public readonly ?int $maxItems = null,
+        public readonly bool $skipBlankRows = false,
     ) {}
 
     /** @param array<string,mixed> $raw */
@@ -57,6 +69,14 @@ final class ConfigField
             credentialType: isset($raw['credentialType']) ? (string) $raw['credentialType'] : null,
             rows: isset($raw['rows']) ? (int) $raw['rows'] : null,
             language: isset($raw['language']) ? (string) $raw['language'] : null,
+            fields: is_array($raw['fields'] ?? null)
+                ? array_values(array_map(static fn (array $sub): self => self::fromArray($sub), $raw['fields']))
+                : [],
+            titleKey: isset($raw['titleKey']) ? (string) $raw['titleKey'] : null,
+            addLabel: isset($raw['addLabel']) ? (string) $raw['addLabel'] : null,
+            minItems: isset($raw['minItems']) ? (int) $raw['minItems'] : null,
+            maxItems: isset($raw['maxItems']) ? (int) $raw['maxItems'] : null,
+            skipBlankRows: (bool) ($raw['skipBlankRows'] ?? false),
         );
     }
 
@@ -106,6 +126,10 @@ final class ConfigField
             'credentialType' => $this->credentialType,
             'rows' => $this->rows,
             'language' => $this->language,
+            'titleKey' => $this->titleKey,
+            'addLabel' => $this->addLabel,
+            'minItems' => $this->minItems,
+            'maxItems' => $this->maxItems,
         ] as $k => $v) {
             if ($v !== null) {
                 $out[$k] = $v;
@@ -113,6 +137,12 @@ final class ConfigField
         }
         if ($this->options !== []) {
             $out['options'] = $this->options;
+        }
+        if ($this->skipBlankRows) {
+            $out['skipBlankRows'] = true;
+        }
+        if ($this->fields !== []) {
+            $out['fields'] = array_map(static fn (self $sub): array => $sub->toArray(), $this->fields);
         }
 
         return $out;

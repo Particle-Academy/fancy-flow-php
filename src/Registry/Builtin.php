@@ -394,17 +394,36 @@ final class Builtin
             ],
             [
                 'name' => 'transform', 'category' => 'logic', 'sideEffects' => 'none', 'label' => 'Transform',
-                // TransformExecutor.php has TWO returns: $ctx->input('in', ...) when
-                // no expression is configured, else Expr::evaluate($expression, ...).
-                // So the relation itself depends on config -- the Closure form the
-                // reference consumer proposed, using machinery outputShape already had.
-                'emits' => static fn (array $config): string => ($config['expression'] ?? '') === ''
-                    ? 'input'
-                    : 'expression:expression',
+                // TransformExecutor has THREE outputs, chosen by its path(): the
+                // expression's shape, a freshly built object (no relation --
+                // under-claiming is free), or the input untouched. So the relation
+                // depends on config, and reads the same function the executor
+                // does so the two cannot disagree.
+                'emits' => static fn (array $config): ?string => match (TransformExecutor::path($config)) {
+                    'expression' => 'expression:expression',
+                    'fields' => null,
+                    default => 'input',
+                },
                 'description' => 'Reshape data with an expression.', 'icon' => 'ƒ',
+                // The same three keys, defaults and types as the TS kind, because
+                // the TS editor writes the config this validates.
                 'configSchema' => [
-                    ['type' => 'expression', 'key' => 'expression', 'label' => 'Expression',
-                        'example' => "{{ { id: \$json.id, name: \$json.first + ' ' + \$json.last } }}", 'required' => true],
+                    ['type' => 'select', 'key' => 'mode', 'label' => 'Build the output', 'default' => 'fields',
+                        'options' => [['value' => 'fields', 'label' => 'Field by field'], ['value' => 'expression', 'label' => 'One expression']]],
+                    ['type' => 'repeater', 'key' => 'fields', 'label' => 'Output fields',
+                        'description' => 'Each row becomes a key on the result.',
+                        'titleKey' => 'key', 'addLabel' => 'Add field',
+                        // The default row is blank and the executor skips a row
+                        // with no key, so an untouched row is a placeholder.
+                        'skipBlankRows' => true,
+                        'fields' => [
+                            ['type' => 'text', 'key' => 'key', 'label' => 'Key', 'required' => true, 'placeholder' => 'name'],
+                            ['type' => 'expression', 'key' => 'value', 'label' => 'Value', 'example' => '{{ $json.first }}', 'required' => true],
+                        ],
+                        'default' => [['key' => '', 'value' => '']]],
+                    ['type' => 'expression', 'key' => 'expression', 'label' => 'Expression (advanced)',
+                        'example' => "{{ { id: \$json.id, name: \$json.first + ' ' + \$json.last } }}",
+                        'description' => 'Used when the mode above is set to one expression.'],
                 ],
             ],
 

@@ -10,6 +10,50 @@ upgrading.
 
 ## [Unreleased]
 
+## 0.65.0 — 2026-11-01
+
+### Added
+
+- **`transform` fields mode** — the editor's DEFAULT authoring path, which did
+  not exist here. `transform` now declares the same three keys, defaults and
+  types as `@particle-academy/fancy-flow`: `mode` (`fields` | `expression`,
+  default `fields`), `fields` (rows of `{key, value}`, default one blank row)
+  and an optional `expression`. In fields mode each row with a non-blank `key`
+  becomes a key on the output (trimmed), its `value` resolved through `Expr`:
+  a whole expression keeps its type, mixed text interpolates, a non-string is
+  already a value, and a repeated key keeps the later value. A blank row is
+  skipped, and a node with no row to write passes its input through. Expression
+  mode ignores `fields`, fields mode ignores `expression`, an absent `mode`
+  takes the expression when one is configured, and an unknown `mode` takes the
+  fields path — all as the reference does (`TransformExecutor::path()`).
+- **`repeater` config fields.** `ConfigField` carries `fields` (the row schema),
+  `titleKey`, `addLabel`, `minItems`, `maxItems` and `skipBlankRows`, and
+  `NodeKindRegistry::validateConfig` checks a repeater as TypeScript does: a
+  list, each row an object, each row field required/typed, the first offending
+  row reported. A decoded `{}` row (`[]` in PHP) counts as a blank object.
+
+### Fixed
+
+- **The editor's defaults for a `transform` node are now admitted** (reported by
+  Maipa against the Python twin, which had the same declaration).
+  `validateConfig` refused `{"mode": "fields", "fields": [{"key": "", "value":
+  ""}]}` with `Expression is required`, because this twin declared ONLY a
+  required `expression`. Invalid configs are still refused the way the
+  reference refuses them: an unknown `mode`, `fields` that is not a list, a
+  non-object row, a row with a value and no key (the executor would drop it), a
+  non-string `expression`.
+- **`transform`'s `emits` follows the path the executor takes**: `input` only
+  when the input passes through, `expression:expression` only when the
+  expression runs, and `null` for a built object.
+
+**What a consumer must DO.** A graph built in the editor in fields mode now
+produces the object it was built to produce here, where it used to pass its
+input through unchanged; that is the fix, but if a host had come to rely on the
+passthrough, set `mode: "expression"` with no expression to keep it. A graph
+authoring a bare `expression` (no `mode`) behaves exactly as before. One known
+limit, inherent to PHP arrays: `"fields": {}` decodes to the same `[]` as an
+empty list and is admitted, where TypeScript refuses it.
+
 ## 0.64.0 — 2026-10-06
 
 ### Fixed
