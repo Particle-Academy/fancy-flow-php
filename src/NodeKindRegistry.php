@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FancyFlow;
 
+use FancyFlow\Nodes\Logic\TransformExecutor;
 use FancyFlow\Registry\Builtin;
 use FancyFlow\Registry\ConfigField;
 use FancyFlow\Registry\NodeKind;
@@ -238,7 +239,14 @@ final class NodeKindRegistry
         if ($field->maxItems !== null && count($value) > $field->maxItems) {
             return "{$field->label} allows at most {$field->maxItems}";
         }
-        $blank = static fn (mixed $cell): bool => $cell === null || $cell === '';
+        // In a `skipBlankRows` repeater a `text` cell that trims to '' is blank
+        // too, by the executor's own trim -- that is how `transform` reads its
+        // key. Without it a whitespace-only key with a value was admitted and
+        // the run dropped the value. Only text cells (the value is never
+        // trimmed), and only where the kind opted in. TS `isBlankCell`.
+        $trimText = $field->skipBlankRows;
+        $blank = static fn (ConfigField $sub, mixed $cell): bool => $cell === null || $cell === ''
+            || ($trimText && $sub->type === 'text' && is_string($cell) && TransformExecutor::trim($cell) === '');
         foreach ($value as $i => $row) {
             $item = $i + 1;
             if (! is_array($row) || ($row !== [] && array_is_list($row))) {
@@ -247,7 +255,7 @@ final class NodeKindRegistry
             if ($field->skipBlankRows) {
                 $allBlank = true;
                 foreach ($field->fields as $sub) {
-                    if (! $blank($row[$sub->key] ?? null)) {
+                    if (! $blank($sub, $row[$sub->key] ?? null)) {
                         $allBlank = false;
                         break;
                     }
@@ -258,7 +266,7 @@ final class NodeKindRegistry
             }
             foreach ($field->fields as $sub) {
                 $cell = $row[$sub->key] ?? null;
-                if ($sub->required && $blank($cell)) {
+                if ($sub->required && $blank($sub, $cell)) {
                     return "{$field->label} item {$item}: {$sub->label} is required";
                 }
                 if ($cell === null) {

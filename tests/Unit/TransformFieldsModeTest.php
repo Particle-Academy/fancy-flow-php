@@ -119,6 +119,65 @@ it('still refuses an invalid config', function (array $config, array $issues) {
     ],
 ]);
 
+/*
+ * A whitespace-only key is blank in admission exactly as in the executor:
+ * TRIMMED. `['key' => '   ', 'value' => 'Configured synthetic value']` used to
+ * validate with no issue (the check compared with ''), then run as a passthrough
+ * because the executor trims the key, finds it blank and skips the row -- the
+ * value vanished. Reported by Maipa against the published 0.65.0. Messages read
+ * off `@particle-academy/fancy-flow` 0.82.1.
+ */
+it('refuses a whitespace-only key with a value, with the empty-key message', function () {
+    expect(tfmRegistry()->validateConfig(tfmKind(), [
+        'mode' => 'fields', 'fields' => [['key' => '   ', 'value' => 'Configured synthetic value']],
+    ]))->toBe([['key' => 'fields', 'message' => 'Output fields item 1: Key is required']]);
+});
+
+it('refuses every whitespace the executor trims away, not only spaces', function (string $key) {
+    expect(tfmRegistry()->validateConfig(tfmKind(), ['mode' => 'fields', 'fields' => [['key' => $key, 'value' => 'x']]]))
+        ->toBe([['key' => 'fields', 'message' => 'Output fields item 1: Key is required']]);
+    // ...and the executor really does drop that row: same helper, same verdict.
+    expect(tfmRun(['mode' => 'fields', 'fields' => [['key' => $key, 'value' => 'x']]], ['a' => 1]))->toBe(['a' => 1]);
+})->with([
+    'tab' => ["\t"],
+    'newline' => ["\n"],
+    'crlf padded' => [" \r\n "],
+    'no-break space' => ["\u{00A0}"],
+    'em space' => ["\u{2003}"],
+    'byte order mark' => ["\u{FEFF}"],
+    'ideographic space' => ["\u{3000}"],
+]);
+
+it('skips a whitespace-only key with an empty value as a blank row', function () {
+    expect(tfmRegistry()->validateConfig(tfmKind(), ['mode' => 'fields', 'fields' => [['key' => '   ', 'value' => '']]]))
+        ->toBe([]);
+    expect(tfmRegistry()->validateConfig(tfmKind(), ['mode' => 'fields', 'fields' => [['key' => "\t"]]]))->toBe([]);
+});
+
+it('admits a padded non-blank key and runs it under the trimmed key', function () {
+    $config = ['mode' => 'fields', 'fields' => [['key' => '  name ', 'value' => '{{ $json.first }}']]];
+    expect(tfmRegistry()->validateConfig(tfmKind(), $config))->toBe([]);
+    expect(tfmRun($config, ['first' => 'Ada']))->toBe(['name' => 'Ada']);
+});
+
+it('keeps judging the value untrimmed: a whitespace value is a value', function () {
+    expect(tfmRegistry()->validateConfig(tfmKind(), ['mode' => 'fields', 'fields' => [['key' => 'pad', 'value' => '  ']]]))
+        ->toBe([]);
+    expect(tfmRegistry()->validateConfig(tfmKind(), ['mode' => 'fields', 'fields' => [['key' => '', 'value' => '  ']]]))
+        ->toBe([['key' => 'fields', 'message' => 'Output fields item 1: Key is required']]);
+});
+
+it('does not trim on a repeater that did not opt in to skipping blank rows', function () {
+    $kind = NodeKind::fromArray([
+        'name' => 'acme/rows', 'category' => 'logic', 'label' => 'Rows',
+        'configSchema' => [[
+            'type' => 'repeater', 'key' => 'rows', 'label' => 'Rows',
+            'fields' => [['type' => 'text', 'key' => 'key', 'label' => 'Key', 'required' => true]],
+        ]],
+    ]);
+    expect(tfmRegistry()->validateConfig($kind, ['rows' => [['key' => '  ']]]))->toBe([]);
+});
+
 it('passes the input through for the untouched default', function () {
     expect(tfmRun(TFM_DEFAULTS, ['a' => 1]))->toBe(['a' => 1]);
 });

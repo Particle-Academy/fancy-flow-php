@@ -108,8 +108,16 @@ final class TransformExecutor implements NodeExecutor
         return $out;
     }
 
-    /** JavaScript's `trim()`: whitespace and line terminators, Unicode-aware. */
-    private static function trim(string $value): string
+    /**
+     * JavaScript's `trim()`: whitespace and line terminators, Unicode-aware --
+     * PCRE `\s` under `/u` (Unicode white space), plus U+FEFF and U+00A0.
+     *
+     * Public because it is the ONE definition of a blank key: the validator
+     * ({@see \FancyFlow\NodeKindRegistry}) judges a `skipBlankRows` row's text
+     * cells with it, so a key this executor skips is a key admission refuses
+     * whenever the row carries a value. They used to disagree (0.65.1).
+     */
+    public static function trim(string $value): string
     {
         return (string) preg_replace('/^[\s\x{FEFF}\x{A0}]+|[\s\x{FEFF}\x{A0}]+$/u', '', $value);
     }
