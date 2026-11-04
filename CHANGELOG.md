@@ -10,6 +10,8 @@ upgrading.
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-11-08
+
 ### Added
 
 - **A template naming a field its upstream step does not declare is now reported
