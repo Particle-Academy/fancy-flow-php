@@ -10,6 +10,22 @@ upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- **A template naming a field its upstream step does not declare is now reported
+  at import, with no run needed.** `Analysis\TemplateReferences` compares each
+  `{{ in.field }}` to the upstream `outputShapeFor` and `emitsFor`. Before this, the
+  only signal was a green run with an empty value. `null` means unknown and refuses
+  nothing, and neither does anything downstream of an unknown; `[]` means "declares
+  no fields"; the `item` port of `for_each` is never judged against the kind's shape.
+
+  **What a consumer must DO:** nothing. `Workflow::import` adds a warning and `ok`
+  does not change. A new warning on your graph is a template that renders empty
+  today. To refuse at save, add `TemplateReferences::rule($registry)` to your
+  `GraphPolicy`, or pass `templateReferences: ImportIssue::ERROR`. To silence it, set
+  `fancy-flow.template_references` to `off`. Pinned by
+  `fancy-conformance`'s `flow/template-references`.
+
 ## 0.65.1 — 2026-11-01
 
 ### Fixed

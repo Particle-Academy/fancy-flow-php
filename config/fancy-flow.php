@@ -15,6 +15,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Template references
+    |--------------------------------------------------------------------------
+    | A `{{ in.field }}` naming a field its upstream step does not declare runs
+    | green and renders empty. `import()` reports it: 'warning' by default,
+    | 'error' to refuse at import, 'off' for neither. A kind with no declared
+    | shape is unknown and is never reported.
+    */
+    'template_references' => 'warning',
+
+    /*
+    |--------------------------------------------------------------------------
     | Custom kinds + executors
     |--------------------------------------------------------------------------
     | `kinds` are extra NodeKind definitions (NodeKind::fromArray shape).

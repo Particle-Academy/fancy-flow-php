@@ -22,6 +22,7 @@ use FancyFlow\Runtime\RunEvent;
 use FancyFlow\Runtime\RunOptions;
 use FancyFlow\Runtime\RunResult;
 use FancyFlow\Schema\FlowGraph;
+use FancyFlow\Schema\ImportIssue;
 use FancyFlow\Schema\ImportResult;
 use FancyFlow\Workflow;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -55,7 +56,12 @@ final class FancyFlowManager
     /** Import a WorkflowSchema (JSON string or array) against the app's kind registry. */
     public function import(string|array $schema, bool $lenient = false): ImportResult
     {
-        return Workflow::import($schema, lenient: $lenient, registry: $this->kinds);
+        return Workflow::import(
+            $schema,
+            lenient: $lenient,
+            registry: $this->kinds,
+            templateReferences: (string) ($this->config['template_references'] ?? ImportIssue::WARNING),
+        );
     }
 
     /** Register a node kind (a {@see NodeKind} or its array form). */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FancyFlow;
 
 use FancyFlow\Analysis\GraphConnectivity;
+use FancyFlow\Analysis\TemplateReferences;
 use FancyFlow\Schema\FlowEdge;
 use FancyFlow\Schema\FlowGraph;
 use FancyFlow\Schema\FlowNode;
@@ -106,12 +107,18 @@ final class Workflow
      * graph. A runtime cannot honour a format it does not know, and one
      * document must not run in one engine and be refused by another.
      *
+     * `$templateReferences` sets how a `{{ in.field }}` naming a field its upstream
+     * step does not declare is reported: a warning by default, `ImportIssue::ERROR`
+     * when a host asks, {@see TemplateReferences::OFF} for neither. Null shapes are
+     * unknown and never reported. See {@see TemplateReferences}.
+     *
      * @param string|array<string,mixed> $schema
      */
     public static function import(
         string|array $schema,
         bool $lenient = false,
         ?NodeKindRegistry $registry = null,
+        string $templateReferences = ImportIssue::WARNING,
     ): ImportResult {
         $registry ??= NodeKindRegistry::default();
         $issues = [];
@@ -264,6 +271,14 @@ final class Workflow
         // a floating node floats in every registry.
         foreach (GraphConnectivity::check($nodes, $edges, $registry) as $issue) {
             $issues[] = $issue;
+        }
+
+        // Same placement and reasoning as connectivity: it reads the edges the
+        // engine will, and a field does not exist in any registry's vocabulary.
+        if ($templateReferences !== TemplateReferences::OFF) {
+            foreach (TemplateReferences::check($nodes, $edges, $registry, $templateReferences) as $issue) {
+                $issues[] = $issue;
+            }
         }
 
         $ok = true;
