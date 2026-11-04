@@ -26,6 +26,13 @@ upgrading.
   `fancy-flow.template_references` to `off`. Pinned by
   `fancy-conformance`'s `flow/template-references`.
 
+- **`FancyFlow\Authoring\*`: the deterministic authoring core, moved here from
+  `fancy-flow-mcp`.** `FlowAuthoring`, `DraftWorkflow`, `PortResolver` and
+  `FlowAuthoringException`. Framework-free, so core's `require` stays PHP-only. Anything
+  that authors a graph now shares one copy of validation.
+
+  **What a consumer must DO:** nothing. `fancy-flow-mcp` keeps its old names as aliases.
+
 ## 0.65.1 — 2026-11-01
 
 ### Fixed
