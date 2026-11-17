@@ -158,10 +158,8 @@ vendor/bin/pest tests/Unit/EngineTest.php   # one file
 
 ## Publishing
 
-PHP package — auto-syncs to Packagist from git tags (no publish workflow). Ship =
-bump version → commit → tag `vX.Y.Z` → push tag → Packagist picks it up. First
-publish requires a one-time Packagist submit + GitHub webhook. Then advance the
-envelope pin. See the envelope's `.ai/knowledge/publishing.md`.
+Process rules live in the envelope, not here: see the envelope's
+`.ai/knowledge/publishing.md`.
 
 ## Roadmap
 
