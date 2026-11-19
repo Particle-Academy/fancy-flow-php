@@ -30,9 +30,8 @@
     },
     "require-dev": {
         "laravel/ai": "^0.9",
-        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0",
-        "pestphp/pest": "^2.0|^3.0|^4.0",
-        "phpunit/phpunit": "^10.0|^11.0|^12.0",
+        "laravel/framework": "^13.0",
+        "pestphp/pest": "^5.0",
         "particle-academy/prism": ">=0.114 <1.0",
         "particle-academy/fancy-conformance": "0.33"
     },

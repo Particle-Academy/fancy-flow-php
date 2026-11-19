@@ -90,7 +90,7 @@ it('fails a subgraph node whose nested graph it cannot read, rather than running
 it('does not resolve a stored workflow it cannot read to an empty graph', function () {
     config()->set('fancy-flow.persistence.enabled', true);
     $this->loadMigrationsFrom(dirname(__DIR__, 2).'/database/migrations');
-    $this->artisan('migrate')->run();
+    $this->artisan('migrate');
 
     // `version` on the ROW is the workflow's own revision; the schema inside
     // carries no schema version at all.

@@ -11,8 +11,8 @@ use FancyFlow\Schema\PortDescriptor;
  * Pest configuration for fancy-flow-php.
  *
  * Tests under `tests/Unit/` and `tests/Parity/` run against pure PHP — the
- * framework-free core. The Laravel integration tests (Orchestra Testbench)
- * arrive with the 0.2 Laravel layer under `tests/Laravel/`.
+ * framework-free core. The Laravel integration tests under `tests/Laravel/`
+ * and `tests/Durable/` boot a hand-built Laravel app (`Laravel\TestCase`).
  */
 
 uses()->in(__DIR__.'/Unit');

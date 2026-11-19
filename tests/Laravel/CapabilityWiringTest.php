@@ -57,7 +57,7 @@ it('uses an LLM client bound in the container for llm_router', function () {
 it('resolves a subflow reference from the stored workflows table', function () {
     config()->set('fancy-flow.persistence.enabled', true);
     $this->loadMigrationsFrom(dirname(__DIR__, 2).'/database/migrations');
-    $this->artisan('migrate')->run();
+    $this->artisan('migrate');
 
     \FancyFlow\Laravel\Models\Workflow::create([
         'name' => 'greet',

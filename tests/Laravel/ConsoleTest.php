@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use FancyFlow\Workflow;
+use Illuminate\Support\Facades\Artisan;
 
 /** Write a schema to a temp file and return its path. */
 function tempSchema(array $nodes, array $edges = []): string
@@ -18,16 +19,18 @@ function tempSchema(array $nodes, array $edges = []): string
 }
 
 it('lists registered kinds', function () {
-    $this->artisan('flow:list-kinds')
-        ->expectsOutputToContain('manual_trigger')
-        ->expectsOutputToContain('27 kinds registered.')
-        ->assertSuccessful();
+    $code = $this->artisan('flow:list-kinds');
+    $output = Artisan::output();
+
+    expect($output)->toContain('manual_trigger')
+        ->and($output)->toContain('27 kinds registered.')
+        ->and($code)->toBe(0);
 });
 
 it('validates a workflow file', function () {
     $file = tempSchema([['id' => 't', 'kind' => 'manual_trigger', 'position' => ['x' => 0, 'y' => 0]]]);
 
-    $this->artisan('flow:validate', ['file' => $file])->assertSuccessful();
+    expect($this->artisan('flow:validate', ['file' => $file]))->toBe(0);
 
     @unlink($file);
 });
@@ -35,7 +38,7 @@ it('validates a workflow file', function () {
 it('fails validation on an unknown kind', function () {
     $file = tempSchema([['id' => 'x', 'kind' => 'bogus_kind', 'position' => ['x' => 0, 'y' => 0]]]);
 
-    $this->artisan('flow:validate', ['file' => $file])->assertFailed();
+    expect($this->artisan('flow:validate', ['file' => $file]))->not->toBe(0);
 
     @unlink($file);
 });
@@ -49,8 +52,7 @@ it('runs a workflow file', function () {
         [['id' => 'e1', 'source' => 't', 'target' => 'o']],
     );
 
-    $this->artisan('flow:run', ['workflow' => $file, '--input' => '{"t":{"hello":"world"}}'])
-        ->assertSuccessful();
+    expect($this->artisan('flow:run', ['workflow' => $file, '--input' => '{"t":{"hello":"world"}}']))->toBe(0);
 
     @unlink($file);
 });

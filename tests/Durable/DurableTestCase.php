@@ -29,8 +29,8 @@ abstract class DurableTestCase extends TestCase
         // passed were no longer testing what their names say. A harness must
         // not change meaning because a default moved underneath it.
         $app['config']->set('fancy-flow.queue.driver', 'single');
-        $app['config']->set('database.default', 'testbench');
-        $app['config']->set('database.connections.testbench', [
+        $app['config']->set('database.default', 'testing');
+        $app['config']->set('database.connections.testing', [
             'driver' => 'sqlite',
             'database' => ':memory:',
             'prefix' => '',
