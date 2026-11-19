@@ -35,8 +35,12 @@
         "particle-academy/prism": ">=0.114 <1.0",
         "particle-academy/fancy-conformance": "0.33"
     },
+    "conflict": {
+        "laravel/framework": "<13.0",
+        "illuminate/support": "<13.0"
+    },
     "suggest": {
-        "illuminate/support": "Enables the optional Laravel layer — service provider, facade, queued durable runs, #[FlowNode] discovery, Artisan, and RunEvent → Laravel events. Compatible with 10.x through 13.x. The framework-free core (Workflow, FlowRunner, registries, the 26 built-ins) needs no framework.",
+        "illuminate/support": "Enables the optional Laravel layer — service provider, facade, queued durable runs, #[FlowNode] discovery, Artisan, and RunEvent → Laravel events. Requires ^13.0. The framework-free core (Workflow, FlowRunner, registries, the 26 built-ins) needs no framework.",
         "laravel/ai": "Makes the `llm_branch` node work with zero glue — auto-detected and wired through the shipped laravel/ai adapter (structured output constrained to the declared routes).",
         "particle-academy/prism": "Makes the `llm_branch` node work with zero glue — auto-detected and wired through the shipped Prism adapter (structured output constrained to the declared routes). Particle Academy’s maintained fork of prism-php/prism, carrying the same Prism\\Prism\\ namespace — do not install both."
     },

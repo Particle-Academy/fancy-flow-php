@@ -11,7 +11,7 @@ composer require particle-academy/fancy-flow-php
 ```
 
 - PHP 8.4+. The core has zero framework dependencies.
-- Under Laravel (`illuminate/support` 10.x to 13.x) the service provider and the
+- Under Laravel (`illuminate/support` ^13.0; older Laravel is refused by a composer `conflict`) the service provider and the
   `FancyFlow` facade auto-register: queued durable runs, `#[FlowNode]`
   discovery, Artisan commands, run events as Laravel events.
 - For `llm_router`, install ONE of `particle-academy/prism` or `laravel/ai`;
