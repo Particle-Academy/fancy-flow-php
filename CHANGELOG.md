@@ -10,6 +10,10 @@ upgrading.
 
 ## [Unreleased]
 
+### Changed
+
+- Conformance fixtures 0.62.0: the bare-routing and raw branch-condition parity rows are now pinned at fancy-conformance 0.62.0 (was 0.33). Test-only; no runtime change, nothing to do.
+
 ## [0.67.0] - 2026-11-19
 
 ### Changed

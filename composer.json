@@ -33,7 +33,7 @@
         "laravel/framework": "^13.0",
         "pestphp/pest": "^5.0",
         "particle-academy/prism": ">=0.114 <1.0",
-        "particle-academy/fancy-conformance": "0.33"
+        "particle-academy/fancy-conformance": "0.62"
     },
     "conflict": {
         "laravel/framework": "<13.0",

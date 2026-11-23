@@ -35,7 +35,7 @@ $rows = array_values(array_filter(
 
 it('loads all five shared raw-branch rows', function () use ($rows): void {
     echo "\nflow/graph-runs raw branch condition [php] -- fancy-conformance ".Conformance::version()."\n";
-    expect(Conformance::version())->toBe('0.33.0');
+    expect(Conformance::version())->toBe('0.62.0');
     // A filter that silently matches nothing would turn every assertion below
     // into a pass over an empty set.
     expect(count($rows))->toBe(5);
