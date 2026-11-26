@@ -501,7 +501,7 @@ final class Builtin
                     ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'placeholder' => 'claude-sonnet-4-5', 'required' => true],
                     ['type' => 'textarea', 'key' => 'system', 'label' => 'System prompt', 'rows' => 4],
                     ['type' => 'expression', 'key' => 'prompt', 'label' => 'User prompt', 'example' => '{{ $json.question }}', 'required' => true],
-                    ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1, 'default' => 0.7],
+                    ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1], // no default: sent only when the author sets one
                     ['type' => 'number', 'key' => 'max_tokens', 'label' => 'Max tokens', 'min' => 1, 'max' => 8192, 'default' => 1024],
                     ['type' => 'json', 'key' => 'tools', 'label' => 'Tools (JSON)', 'description' => 'Optional Anthropic-style tool definitions.'],
                     ['type' => 'credential', 'key' => 'credential', 'label' => 'API credential', 'credentialType' => 'llm_credential'],
@@ -741,7 +741,7 @@ final class Builtin
                 ['type' => 'expression', 'key' => 'prompt', 'label' => 'Task', 'required' => true, 'example' => '{{ $json.task }}'],
                 ['type' => 'json', 'key' => 'tools', 'label' => 'Tools (JSON)', 'description' => 'Tool definitions the agent may call.'],
                 ['type' => 'number', 'key' => 'max_steps', 'label' => 'Max steps', 'default' => 3, 'min' => 1, 'max' => 20],
-                ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1, 'default' => 0.7],
+                ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1], // no default: sent only when the author sets one
             ],
         ]);
     }

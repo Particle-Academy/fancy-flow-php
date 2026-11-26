@@ -10,6 +10,24 @@ upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`llm_call` and `agent` no longer default `temperature` to 0.7.** The field
+  had `'default' => 0.7`, so `defaultConfigFor()` wrote it into nodes nobody
+  had configured: `FlowAuthoring::addNode()` (and through it fancy-flow-mcp's
+  `add_node`), `describeKind()`'s `defaultConfig`, and `Workflow::import()` for
+  a node saved without a config. The executors then forwarded it to the
+  `LlmClient`, and current Anthropic models reject a request that sets
+  `temperature`, so such a node failed on its first call. No sampling parameter
+  (`temperature`, `top_p`, `top_k`) now has a default: none is sent unless the
+  author sets one. An explicit value still passes through unchanged; whether a
+  provider accepts it is the adapter's call. The field is still declared, so
+  authors can set it. **What to do:** nothing, unless you relied on the implicit
+  0.7; then set `temperature` to 0.7 on the node. Saved graphs are not
+  rewritten: a stored 0.7 from the old default cannot be told apart from a
+  deliberate one, so it stays and is still sent. Remove it from nodes that run
+  on a model that rejects it.
+
 ### Changed
 
 - Conformance fixtures 0.62.0: the bare-routing and raw branch-condition parity rows are now pinned at fancy-conformance 0.62.0 (was 0.33). Test-only; no runtime change, nothing to do.
