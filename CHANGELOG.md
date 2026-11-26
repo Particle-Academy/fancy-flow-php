@@ -10,8 +10,28 @@ upgrading.
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-11-26
+
+0.67.0 was dated 2026-11-19 but never tagged, so it was never published. It is
+re-dated to its real release day and carries the two fixes below as well.
+
+### Changed
+
+- **BREAKING:** Laravel 13 is the minimum; an app on Laravel 12 or older can no
+  longer install this; upgrade Laravel. On Laravel 13, or without Laravel at
+  all, do nothing.
+- composer.json now declares `conflict: laravel/framework <13.0, illuminate/support <13.0`;
+  the core stays framework-free. The `illuminate/support` suggestion and
+  `AGENTS.md` no longer claim 10.x to 12.x support.
+- Rebranded the display name to Fancy Dev Kit (README and package description). Package names, the npm scope, URLs and the `fancy-ui` MCP id are unchanged.
+- **Docs:** `AGENTS.md` is now the guide to using this package (install, its entries on the Fancy MCP catalog server, API essentials, traps). The contributor notes it held moved to `CONTRIBUTING.md`, and `CLAUDE.md` is now a symlink to it. The README points to the MCP server and to `AGENTS.md`. No code changed; nothing to do.
+- CI: re-pin org third-party allowlist to 2614224
+- Tests moved to Pest 5; `orchestra/testbench` and `phpunit/phpunit` removed from `require-dev`. The Laravel and durable suites boot a hand-built Laravel app (`tests/Laravel/TestCase.php`) on in-memory SQLite. `laravel/framework` is now a direct dev dependency, under the integration-framework carve-out (it used to arrive through testbench). No runtime change; nothing to do.
+- Conformance fixtures 0.62.0: the bare-routing and raw branch-condition parity rows are now pinned at fancy-conformance 0.62.0 (was 0.33). Test-only; no runtime change, nothing to do.
+
 ### Fixed
 
+- **Docs:** `CONTRIBUTING.md` no longer carries its own publishing procedure. Process rules live in the envelope; the section now points to the envelope's `.ai/knowledge/publishing.md`.
 - **`llm_call` and `agent` no longer default `temperature` to 0.7.** The field
   had `'default' => 0.7`, so `defaultConfigFor()` wrote it into nodes nobody
   had configured: `FlowAuthoring::addNode()` (and through it fancy-flow-mcp's
@@ -33,29 +53,6 @@ upgrading.
   2026-11-30. A placeholder is only a hint and is never written into a node.
   **What to do:** nothing, unless a saved node or `fancy-flow.llm.model` names
   `claude-sonnet-4-5`; move it to a current model before that date.
-
-### Changed
-
-- Conformance fixtures 0.62.0: the bare-routing and raw branch-condition parity rows are now pinned at fancy-conformance 0.62.0 (was 0.33). Test-only; no runtime change, nothing to do.
-
-## [0.67.0] - 2026-11-19
-
-### Changed
-
-- **BREAKING:** Laravel 13 is the minimum; an app on Laravel 12 or older can no
-  longer install this; upgrade Laravel. On Laravel 13, or without Laravel at
-  all, do nothing.
-- composer.json now declares `conflict: laravel/framework <13.0, illuminate/support <13.0`;
-  the core stays framework-free. The `illuminate/support` suggestion and
-  `AGENTS.md` no longer claim 10.x to 12.x support.
-- Rebranded the display name to Fancy Dev Kit (README and package description). Package names, the npm scope, URLs and the `fancy-ui` MCP id are unchanged.
-- **Docs:** `AGENTS.md` is now the guide to using this package (install, its entries on the Fancy MCP catalog server, API essentials, traps). The contributor notes it held moved to `CONTRIBUTING.md`, and `CLAUDE.md` is now a symlink to it. The README points to the MCP server and to `AGENTS.md`. No code changed; nothing to do.
-- CI: re-pin org third-party allowlist to 2614224
-- Tests moved to Pest 5; `orchestra/testbench` and `phpunit/phpunit` removed from `require-dev`. The Laravel and durable suites boot a hand-built Laravel app (`tests/Laravel/TestCase.php`) on in-memory SQLite. `laravel/framework` is now a direct dev dependency, under the integration-framework carve-out (it used to arrive through testbench). No runtime change; nothing to do.
-
-### Fixed
-
-- **Docs:** `CONTRIBUTING.md` no longer carries its own publishing procedure. Process rules live in the envelope; the section now points to the envelope's `.ai/knowledge/publishing.md`.
 
 ## [0.66.0] - 2026-11-04
 
