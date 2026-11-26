@@ -27,6 +27,12 @@ upgrading.
   rewritten: a stored 0.7 from the old default cannot be told apart from a
   deliberate one, so it stays and is still sent. Remove it from nodes that run
   on a model that rejects it.
+- **The `model` placeholder on `llm_call`, `llm_router` and `agent` now
+  suggests `claude-sonnet-5-5`,** as does `PrismLlmClient`'s "no model
+  configured" message. It suggested `claude-sonnet-4-5`, which retires on
+  2026-11-30. A placeholder is only a hint and is never written into a node.
+  **What to do:** nothing, unless a saved node or `fancy-flow.llm.model` names
+  `claude-sonnet-4-5`; move it to a current model before that date.
 
 ### Changed
 

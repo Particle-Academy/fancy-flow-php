@@ -64,7 +64,7 @@ final class PrismLlmClient implements LlmClient
             // letting the provider fail with a generic HTTP error.
             throw new FlowException(
                 'llm_router: no model configured for Prism. Set the node\'s `model` config '
-                .'or config("fancy-flow.llm.model") (e.g. "claude-sonnet-4-5").',
+                .'or config("fancy-flow.llm.model") (e.g. "claude-sonnet-5-5").',
             );
         }
 

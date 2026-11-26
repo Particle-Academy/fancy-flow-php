@@ -498,7 +498,7 @@ final class Builtin
                             ['value' => 'openai', 'label' => 'OpenAI'],
                             ['value' => 'custom', 'label' => 'Custom'],
                         ]],
-                    ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'placeholder' => 'claude-sonnet-4-5', 'required' => true],
+                    ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'placeholder' => 'claude-sonnet-5-5', 'required' => true],
                     ['type' => 'textarea', 'key' => 'system', 'label' => 'System prompt', 'rows' => 4],
                     ['type' => 'expression', 'key' => 'prompt', 'label' => 'User prompt', 'example' => '{{ $json.question }}', 'required' => true],
                     ['type' => 'number', 'key' => 'temperature', 'label' => 'Temperature', 'min' => 0, 'max' => 2, 'step' => 0.1], // no default: sent only when the author sets one
@@ -545,7 +545,7 @@ final class Builtin
                         ['value' => 'openai', 'label' => 'OpenAI'],
                         ['value' => 'custom', 'label' => 'Custom'],
                     ]],
-                    ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'placeholder' => 'claude-sonnet-4-5'],
+                    ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'placeholder' => 'claude-sonnet-5-5'],
                     ['type' => 'switch', 'key' => 'fallback', 'label' => 'Add a `fallback` port', 'default' => true,
                         'description' => 'Where the flow goes if the model returns no usable route.'],
                     ['type' => 'credential', 'key' => 'credential', 'label' => 'API credential', 'credentialType' => 'llm_credential'],
@@ -736,7 +736,7 @@ final class Builtin
                 ],
             'description' => 'LLM agent with tools + multi-step reasoning.',
             'configSchema' => [
-                ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'required' => true, 'placeholder' => 'claude-sonnet-4-5'],
+                ['type' => 'text', 'key' => 'model', 'label' => 'Model', 'required' => true, 'placeholder' => 'claude-sonnet-5-5'],
                 ['type' => 'textarea', 'key' => 'system', 'label' => 'System prompt', 'rows' => 4],
                 ['type' => 'expression', 'key' => 'prompt', 'label' => 'Task', 'required' => true, 'example' => '{{ $json.task }}'],
                 ['type' => 'json', 'key' => 'tools', 'label' => 'Tools (JSON)', 'description' => 'Tool definitions the agent may call.'],
