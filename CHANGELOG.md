@@ -49,6 +49,15 @@ re-dated to its real release day and carries the two fixes below as well.
   rewritten: a stored 0.7 from the old default cannot be told apart from a
   deliberate one, so it stays and is still sent. Remove it from nodes that run
   on a model that rejects it.
+- **`{{ x.length }}` on a list now resolves to the list's size**, as it does
+  in the TypeScript engine. The path walk only followed array keys, so
+  `length` named nothing: an expression such as `{{ in.results.length }}`
+  after a `for_each` resolved to null (a broken path), while the same graph
+  gave the count on the TypeScript runtime. Found by lab run 1403, where a
+  correct batch-scoring run reported its assert as broken. Only lists get it:
+  a map without a `length` key and a string still do not resolve, and a real
+  `length` key is read as before. **What to do:** nothing. A graph that used
+  `.length` on a list now gets the number instead of null.
 - **The `model` placeholder on `llm_call`, `llm_router` and `agent` now
   suggests `claude-sonnet-5-5`,** as does `PrismLlmClient`'s "no model
   configured" message. It suggested `claude-sonnet-4-5`, which retires on

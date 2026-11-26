@@ -117,6 +117,13 @@ final class Expr
         foreach ($segments as $segment) {
             if (is_array($cursor) && array_key_exists($segment, $cursor)) {
                 $cursor = $cursor[$segment];
+            } elseif ($segment === 'length' && is_array($cursor) && array_is_list($cursor)) {
+                // `{{ x.length }}` on a list is its size, as in the TypeScript
+                // engine, where arrays carry `length`. Without it the same graph
+                // passed there and reported a broken path here (lab run 1403).
+                // Only for lists: a map has no implicit length, and a real
+                // `length` key is read by the branch above.
+                $cursor = count($cursor);
             } elseif (is_object($cursor) && isset($cursor->{$segment})) {
                 $cursor = $cursor->{$segment};
             } elseif (is_object($cursor) && property_exists($cursor, $segment)) {
