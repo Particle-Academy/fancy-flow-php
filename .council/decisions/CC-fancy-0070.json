@@ -1,0 +1,44 @@
+{
+    "schema": "change-council/decision.v1",
+    "ref": "CC-fancy-0070",
+    "origin": "fancy",
+    "state": "approved",
+    "decided_by": "tally",
+    "decided_at": "2026-11-26T18:28:42Z",
+    "approved_unopposed": false,
+    "packages": [
+        {
+            "ecosystem": "composer",
+            "name": "particle-academy/fancy-flow-php"
+        }
+    ],
+    "covers": {
+        "versions": null,
+        "fingerprints": []
+    },
+    "waivers": [],
+    "rounds": [
+        {
+            "number": 1,
+            "digest": "sha256:5a23c1ba0acfe55ffef37891defbd00ca2d7939e3f600a44b1a0c9a893aa3a56",
+            "outcomes": {
+                "approve": 3,
+                "conflict": 0,
+                "abstain": 0,
+                "silent": 0,
+                "unreachable": 0,
+                "undelivered": 0,
+                "invalid": 0
+            },
+            "weighing": {
+                "blocking_weight": 0,
+                "threshold": 1,
+                "below_threshold": 0,
+                "advisory": 0
+            }
+        }
+    ],
+    "ledger_head": "b90a99c8b50c403065de3e5805fcefeebb7cff188e047196ca4271cf4d426906",
+    "key_id": "f22c02ccaa11ce19",
+    "signature": "jMe62EITAkXEJR1yKaXrjXg5AQX6fsUjfQyveEYNSMIf5DDibRMSn6vegAFDG91cTn6MDsxu0ePltesYciafCA=="
+}

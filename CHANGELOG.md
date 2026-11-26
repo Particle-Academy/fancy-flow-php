@@ -19,7 +19,9 @@ re-dated to its real release day and carries the two fixes below as well.
 
 - **BREAKING:** Laravel 13 is the minimum; an app on Laravel 12 or older can no
   longer install this; upgrade Laravel. On Laravel 13, or without Laravel at
-  all, do nothing.
+  all, do nothing. Approved by the change council as CC-fancy-0070 (moic,
+  tynn and weaver voted approve); the signed decision is in
+  `.council/decisions/CC-fancy-0070.json`.
 - composer.json now declares `conflict: laravel/framework <13.0, illuminate/support <13.0`;
   the core stays framework-free. The `illuminate/support` suggestion and
   `AGENTS.md` no longer claim 10.x to 12.x support.
