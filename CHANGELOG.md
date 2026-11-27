@@ -58,6 +58,16 @@ re-dated to its real release day and carries the two fixes below as well.
   a map without a `length` key and a string still do not resolve, and a real
   `length` key is read as before. **What to do:** nothing. A graph that used
   `.length` on a list now gets the number instead of null.
+- **`for_each` now says what a `results` entry looks like.** Each entry is
+  that iteration's node outputs keyed by node id, so a lane node's field is
+  `results.0.<node-id>.<field>`, and a failed item's entry is null (its error
+  is in `failures`). The kind description and the `results` output field used
+  to say only "each iteration's node results", and the kind description left
+  `failures` out of the `done` payload. An authoring agent reads both through
+  `describe_node_kind` and `list_node_kinds`; lab run 1406 had a builder write
+  `{{ in.results.0.total }}` where the value was at
+  `results.0.score-1.total`. Text only: the shape itself is unchanged.
+  **What to do:** nothing.
 - **The `model` placeholder on `llm_call`, `llm_router` and `agent` now
   suggests `claude-sonnet-5-5`,** as does `PrismLlmClient`'s "no model
   configured" message. It suggested `claude-sonnet-4-5`, which retires on

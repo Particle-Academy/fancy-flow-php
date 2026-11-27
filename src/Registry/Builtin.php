@@ -315,11 +315,11 @@ final class Builtin
                 // Read from ForEachExecutor.php:25.
                 'outputShape' => [
                     ['path' => 'items', 'type' => 'array', 'description' => 'The list that was iterated.'],
-                    ['path' => 'results', 'type' => 'array', 'description' => 'Each iteration\'s node results, in item order.'],
+                    ['path' => 'results', 'type' => 'array', 'description' => 'One entry per item, in item order: that iteration\'s node outputs keyed by node id, so a lane node\'s field is `results.0.<node-id>.<field>` (e.g. `{{ in.results.0.score-1.total }}`). A failed item\'s entry is null; its error is in `failures`.'],
                     ['path' => 'failures', 'type' => 'array', 'description' => 'Failed items with their index and error.'],
                     ['path' => 'count', 'type' => 'number', 'description' => 'How many items it held.'],
                 ],
-                'description' => 'When `item` is wired, runs that reachable lane once per item, sequentially, then publishes `{items, results, count}` on `done`. With no `item` edge it publishes the list and count as data.', 'icon' => '↻',
+                'description' => 'When `item` is wired, runs that reachable lane once per item, sequentially, then publishes `{items, results, failures, count}` on `done`. Each `results` entry is that iteration\'s node outputs keyed by node id (`results.0.<node-id>.<field>`), and null for a failed item. With no `item` edge it publishes the list and count as data.', 'icon' => '↻',
                 'inputs' => [['id' => 'in']], 'outputs' => [['id' => 'item', 'label' => 'item'], ['id' => 'done', 'label' => 'done']],
                 'configSchema' => [
                     ['type' => 'expression', 'key' => 'source', 'label' => 'List', 'example' => '{{ $json.users }}', 'required' => true],
